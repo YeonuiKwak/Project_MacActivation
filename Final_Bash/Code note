@@ -1,0 +1,70 @@
+
+sample=(
+GSE81249_peaks_lowFDR_Group_TTPAAGFP-LPS_0h_mm10--ensembl75.bed.gz
+GSE81249_peaks_lowFDR_Group_TTPAAGFP-LPS_1h_mm10--ensembl75.bed.gz
+GSE81249_peaks_lowFDR_Group_TTPAAGFP-LPS_4h_mm10--ensembl75.bed.gz
+GSE81249_peaks_lowFDR_Group_TTPGFP-LPS_0h_mm10--ensembl75.bed.gz
+GSE81249_peaks_lowFDR_Group_TTPGFP-LPS_1h_mm10--ensembl75.bed.gz
+GSE81249_peaks_lowFDR_Group_TTPGFP-LPS_4h_mm10--ensembl75.bed.gz
+)
+
+for f in ${sample[@]}
+do
+  name=`echo $f|cut -d '.' -f1 - |cut -d '_' -f1,5,6 - `
+  gunzip -c ${f}>${name}.mm10.bed
+done
+
+step2. liftover in UCSC
+http://genome.ucsc.edu/cgi-bin/hgLiftOver
+
+
+step3. count binding sites in custom UTR.
+
+sort -k1,1 -k2,2n hg38_GFPTTP_LPS0h.bed>hg38_GFPTTP_LPS0h.s.bed
+ bedtools map -a custom.3UTR.n.30144.bed12 -b hg38_GFPTTP_LPS0h.s.bed -c 4 -o sum -split -sorted|awk 'BEGIN{OFS="\t"}{print $4,$13}'>customUTR.hg38_GFPTTP_LPS0h.n.binding.txt
+
+
+
+
+#2020/10/13
+#One way:lift over!
+#sort and merge the nearby peaks with the distance as far as 5 nt.
+sort -k1,1 -k2,2n GSE81249_TTPGFP-LPS_0h.mm10.bed|bedtools merge -d 15 -c 4 -o sum>TTPGFP0h.bed
+#total readcounts
+awk '$4<0{print $1,$2,$3,-1*$4;next}{print $0}' TTPGFP0h.bed |awk '{s+=$4}END{print s}'
+
+#liftover and save it with pre:
+#intersect the liftovered hg38 iCLIP sites to human 3UTRs.
+bedtools intersect -a custom.3UTR.n.30144.bed12 -b hg38TTP0h.bed  -wao -split |awk '$13!= "."{print $4"\t"$16}'>TTP0hbindingsite.txt
+
+
+
+
+#Second way: map the sites in mouse gene annotation and convert the gene name to human ones.
+
+
+#Intersection with 3UTR of mm10 genes.
+bedtools intersect -a mm10_3UTR.bed -b ./gkw474_Supplementary_Data/TTPGFP0h.bed -wao |awk '$10!="."{print $4"\t"$10}'|awk 'BEGIN{FS="_";OFS="\t"}{print $1"\t"$7}'|awk '{print $1"\t"$3}'>mm10_TTP1hbindingsites.txt
+
+#convert mouse gene names to human gene names
+awk 'NR==FNR{a[$4]=$5;next}($1 in a){print $1"\t"$2"\t"a[$1]}' mm10tohg38_conversion.txt mm10_TTP1hbindingsites.txt >TTP_1h.txt
+
+
+
+
+
+
+
+
+
+#2020/10/15
+#ActD sample coordinate shifting by +50
+
+cat YK1_CKDL200153943-1a-1_H5MLJDSXY_L4_1.minus.bedGraph|awk '{print $1,$2+50,$3+50,$4,$5,$6}'> ./YK4_ActD_TED_mn.bedGraph
+cat YK2_CKDL200153943-1a-2_H5MLJDSXY_L4_1.minus.bedGraph|awk '{print $1,$2+50,$3+50,$4,$5,$6}'> ./YK5_ActD_TED_mn.bedGraph
+cat YK3_CKDL200153943-1a-3_H5MLJDSXY_L4_1.minus.bedGraph|awk '{print $1,$2+50,$3+50,$4,$5,$6}'> ./YK6_ActD_TED_mn.bedGraph
+
+
+cat YK1_CKDL200153943-1a-1_H5MLJDSXY_L4_1.plus.bedGraph|awk '{print $1,$2-50,$3-50,$4,$5,$6}'> ./YK4_ActD_TED_pl.bedGraph
+cat YK2_CKDL200153943-1a-2_H5MLJDSXY_L4_1.plus.bedGraph|awk '{print $1,$2-50,$3-50,$4,$5,$6}'> ./YK5_ActD_TED_pl.bedGraph
+cat YK3_CKDL200153943-1a-3_H5MLJDSXY_L4_1.plus.bedGraph|awk '{print $1,$2-50,$3-50,$4,$5,$6}'> ./YK6_ActD_TED_pl.bedGraph
