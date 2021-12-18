@@ -1,0 +1,494 @@
+---
+title: "Step1_build relative Usage across Tissues"
+author: "Yeonui+Kwak"
+date: "7/19/2021"
+output: html_document
+---
+
+
+```{R}
+getwd()
+sample=c(
+"bcells-1",
+"bcells-2",
+"blcl",
+"brain",
+"breast",
+"hES",
+"hek293",
+"hela",
+"mcf10a.hras-1",
+"mcf10a.hras-2",
+"mcf10a-1",
+"mcf10a-2",
+"mcf7",
+"ntera",
+"ovary",
+"skmuscle",
+"testis"
+)
+length(sample)
+v=vector(mode ="list",length = length(sample))
+id=1
+for (x in sample){
+  
+  i=paste0(x,".map.txt")
+  v[[id]]=read.table(i,header=F,stringsAsFactors = F)
+  id=id+1   
+}
+
+for (i in 1:17){
+  v[[i]]$V9=sample[i]
+}
+dat=reduce(v,bind_rows)
+
+```
+
+```{R}
+head(dat)
+colnames(dat)=c("chr","start","end","CPSpos","sumrc","strand","hg19.ENST","gene","tissue","tissue.rc","strand2")
+dat.md=dat%>%select(-strand2)%>%mutate(tissue.rc=replace(tissue.rc,tissue.rc ==".",0))
+write.table(dat.md%>%spread(tissue,tissue.rc),"3pseq.readcount.acrosstissues.txt",col.names=T,row.names = F, quote=F)
+
+```
+
+#only consider lincRNA, miRNA, protein_coding
+```{R}
+ref=read.table("final.nodup.txt",header=T,stringsAsFactors = F)
+head(ref)
+ref=ref%>%arrange(chr,start,end,Sum.rc,strand,hg19.ENST)%>%distinct_at(vars(chr,start,end,Sum.rc,strand,hg19.ENST),.keep_all = T)
+
+ref%>%summarise(n_distinct(CPSpos))#25414
+dat.md%>%summarise(n_distinct(CPSpos))#25414
+spr.dat%>%summarise(n_distinct(CPSpos))#22436
+spr.dat=dat.md%>%spread(tissue,tissue.rc)%>%unite("id",c(hg19.ENST,CPSpos),sep="_")%>%
+  inner_join(ref%>%select(hg19.ENST,CPSpos,CPSposIndex,pos,n,coding)%>%unite("id",c(hg19.ENST,CPSpos),sep="_",remove=F),by="id")
+spr.dat=spr.dat%>%group_by(gene,hg19.ENST)%>%mutate(CPSposIndex=rank(CPSposIndex))
+spr.dat=spr.dat%>%filter(coding %in% c("lincRNA","miRNA","protein_coding"))
+head(spr.dat)
+for (i in 1:7) {
+  name=paste0("3pseq.readcount.acrosstissues.n",i,".txt")
+write.table(spr.dat%>%filter(n==i),name,col.names=T,row.names = F, quote=F,sep = "\t")
+}
+```
+
+
+```{R}
+
+for (i in 1:7){
+  
+tmp=spr.dat%>%filter(n==i)
+tmp.long=tmp%>%gather(-chr,-coding,-start,-end,-id,-sumrc,-strand,-gene,-hg19.ENST,-CPSpos,-CPSposIndex,-pos,-n,key="tissue",value="rc")
+str(tmp.long)
+tmp.long=tmp.long%>%mutate(rc=as.numeric(rc))%>%
+  group_by(tissue,gene,hg19.ENST)%>%mutate("ratio"=rc/sum(rc))
+
+
+#("ratio"=rc/sum(rc),chr,start,end,strand,CPSpos,CPSposIndex,pos,n)
+name=paste0("3pseq.ratio.acrosstissues.n",i,".txt")
+write.table(tmp.long,name,col.names=T,row.names = F, quote=F,sep = "\t")
+}
+head(tmp.long)
+
+#tmp%>%arrange(chr,start,end,)
+```
+Summary of number of PASs across gene criteria,
+```{R}
+
+dat.summary1=spr.dat%>%group_by(n,coding)%>%summarise(gene=paste0(n_distinct(gene),"(",n_distinct(hg19.ENST),")"))%>%rename(PAS=n)%>%ungroup()%>%complete(PAS,nesting(coding),fill = list(gene = "0(0)"))
+
+write.table(dat.summary1,"summary1",col.names=T,row.names = F, quote=F,sep = "\t")
+
+dat.summary1=spr.dat%>%group_by(n,coding)%>%summarise(gene=n_distinct(gene))%>%rename(PAS=n)%>%ungroup()%>%complete(PAS,nesting(coding),fill = list(gene = 0))
+pdf("summary1.pdf",width=5,height=2)
+ggplot(dat.summary1,aes(x=coding,y=gene,fill=as.factor(PAS)))+geom_bar(stat = "identity",position="dodge")+theme_bw()+
+  xlab("Gene Catergory")+ylab("Number of genes")+labs(fill="PAS per gene")+scale_fill_manual(values=yk.col(7))
+dev.off()
+pdf("summary2.pdf",width=7,height=2)
+ggplot(dat.summary1,aes(x=as.factor(PAS),y=gene,fill=as.factor(PAS)))+geom_bar(stat = "identity",position="dodge")+theme_bw()+
+  xlab("Number of PAS per gene")+ylab("Number of genes")+labs(fill="PAS per gene")+scale_fill_manual(values=yk.col(7))+facet_wrap(.~coding,scales = "free_y")
+dev.off()
+
+#ggplot(dat.summary1,aes(x=as.factor(PAS),y=gene,fill=as.factor(coding)))+geom_bar(stat = "identity",position="stack")
+```
+
+#Pick the genes with Two PAS
+#expressed in all tissues
+```{R}
+tmp=spr.dat%>%filter(n==2)%>%ungroup()
+#tmp%>%ungroup()%>%summarise(n_distinct(gene))
+head(tmp)
+write.table(tmp,"n2.genes.readcount.acrosstissues.txt",sep="\t",col.names=T,row.names = F)
+```
+
+
+
+```{r}
+tmp.long=tmp%>%gather(-chr,-start,-coding,-end,-id,-sumrc,-strand,-gene,-hg19.ENST,-CPSpos,-CPSposIndex,-pos,-n,key="tissue",value="rc")
+
+tmp.long=tmp.long%>%mutate(rc=as.numeric(rc))%>%
+  group_by(tissue,gene,hg19.ENST)%>%mutate("ratio"=rc/sum(rc))%>%ungroup()
+fin=tmp.long%>%group_by(tissue,gene,hg19.ENST)%>%separate(CPSpos,c("chr","coordinate"),sep=":",remove=F)%>%mutate(coordinate=as.numeric(coordinate))%>%
+  mutate(distance1.2=abs(coordinate[1]-coordinate[2]))%>%ungroup()%>%select(gene,hg19.ENST,CPSposIndex,pos,n,tissue,ratio,distance1.2,coding)%>%spread(CPSposIndex,ratio)%>%arrange(-`1`)
+fin
+write.table(fin,"PAS.distance.ratio.n2.txt",col.names=T,row.names = F, quote=F,sep="\t")
+fin.bin=fin%>%mutate(bin=ifelse(distance1.2<100,"<100",ifelse(distance1.2<300,"100-300",ifelse(distance1.2<1000,"300-1000",ifelse(distance1.2<3000,"1000-3000",">3000")))))%>%mutate(bin=factor(bin,level=c("<100","100-300","300-1000","1000-3000",">3000")))%>%mutate(candidate=ifelse(distance1.2<300,"No candidate","Candiate"))
+
+fin.bin=fin.bin%>%distinct_at(vars(hg19.ENST),.keep_all=T)
+fin%>%group_by(coding)%>%summarise(n_distinct(hg19.ENST))
+  filter(coding=="protein_coding")
+pdf("Genes with two PASs_distance.pdf",width=8,height=3)
+ggplot(fin.bin,aes(x=bin,fill=candidate))+geom_bar(stat="count")+facet_wrap(.~coding,scale="free")+theme_bw()+xlab("distance between PAS(proximal-distal,nt)")+
+  ylab("number of genes")+ggtitle("Genes with two PASs")+scale_fill_manual(values=c("red","grey"))+
+  theme(axis.text.x = element_text(angle = 45,hjust=1))#+xlim(c(-40,10000))
+dev.off()
+
+#summary3
+dat.summary3=fin.bin%>%group_by(bin,coding)%>%summarise(n=n())
+write.table(dat.summary3,"summary3.txt",col.names=T,row.names = F, quote=F,sep = "\t")
+
+ggplot(dat.summary3,aes(x=bin,y=n,fill=coding))+geom_bar(stat="identity")
+
+tmp%>%filter(gene=="DAD1")
+```
+heatmap
+
+```{R}
+#BiocManager::install("ComplexHeatmap")
+library(ComplexHeatmap)
+### Heatmap with Annotation
+library(dendextend)
+library("circlize")
+library("RColorBrewer")
+library(cluster)    # clustering algorithms
+library(factoextra)
+
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "#999999", "goldenrod2", "orangered1", "red") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+```
+
+```{r}
+library(dendextend)
+library("cluster")
+set.seed(2)
+hm.input=fin%>%select(gene,hg19.ENST,tissue,n,`1`,distance1.2,coding)%>%spread(tissue,`1`)%>%filter(coding!="protein_coding")
+
+hm.input2=hm.input%>%na.omit()
+pa = pam(hm.input2[,6:(ncol(hm.input2))], k = 4)
+hm.input2$cluster=pa$clustering
+HM3=hm.input2[,6:(ncol(hm.input2)-1)]
+nrow(HM3)
+hm.input2=hm.input2%>%unite("id",c(gene,hg19.ENST),sep=":",remove=F)
+rownames(HM3)=hm.input2$gene
+#row_dend = hclust(dist(hm.input2[,5:ncol(hm.input)]))
+row_ha = rowAnnotation(Coding=as.factor(hm.input2$coding),col=list(Coding=c("miRNA"="red","lincRNA"="blue")))
+ha = HeatmapAnnotation(tissue= )
+library(circlize)
+col_fun = colorRamp2(c(0, 5, 10), c("blue", "white", "red"))
+pdf("n2.PASusageacrosstissues_noncoding.pdf",width=10,height=4)
+Heatmap(HM3, name = "PAS usage (Proximal/ALL)", na_col = "grey",
+        show_row_names = T,cluster_columns =F,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = pa$clustering)+rowAnnotation(Coding=as.factor(hm.input2$coding),col=list(Coding=c("miRNA"="red","lincRNA"="blue")))
+dev.off()
+```
+
+#prtein coding genes
+```{R}
+
+hm.input=fin%>%select(gene,hg19.ENST,tissue,n,`1`,distance1.2,coding)%>%spread(tissue,`1`)%>%filter(coding=="protein_coding")
+
+hm.input2=hm.input%>%na.omit()
+pa = pam(hm.input2[,6:(ncol(hm.input2))], k = 20)
+hm.input2$cluster=pa$clustering
+write.table(hm.input2,"n2.PAS.protein.coding.genes.ratio.across.tissues.txt",sep="\t",quote=F,row.names = F,col.names = T)
+HM3=hm.input2[,7:(ncol(hm.input2)-1)]
+nrow(HM3)
+#hm.input2%>%group_by(gene)%>%summarise(n=n())%>%ungroup()%>%filter(n>1)
+
+
+
+hm.input2=hm.input2%>%unite("id",c(gene,hg19.ENST),sep=":",remove=F)
+rownames(HM3)=hm.input2$id
+#row_dend = hclust(dist(hm.input2[,5:ncol(hm.input)]))
+row_ha = rowAnnotation(Coding=as.factor(hm.input2$coding),col=list(Coding=c("miRNA"="red","lincRNA"="blue")))
+
+library(circlize)
+col_fun = colorRamp2(c(0, 5, 10), c("blue", "white", "red"))
+pdf("n2.PASusageacrosstissues_coding.pdf",width=10,height=10)
+Heatmap(HM3, name = "PAS usage (Proximal/ALL)", na_col = "grey",
+        show_row_names = F,cluster_columns = T,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = pa$clustering)#+rowAnnotation(Coding=as.factor(hm.input2$coding),col=list(Coding=c("miRNA"="red","lincRNA"="blue")))
+dev.off()
+tmp=hm.input2%>%filter(cluster %in% c(1,2,3))
+tmp
+HM1=tmp[,7:(ncol(hm.input2)-1)]
+HM1
+pdf("n2.PASusageacrosstissues_coding1.pdf",width=8,height=3)
+Heatmap(HM1, name = "PAS usage (Proximal/ALL)", na_col = "grey",
+        show_row_names = F,cluster_columns = F,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = tmp$cluster)#+#+rowAnnotation(Coding=as.factor(hm.input2$coding),col=list(Coding=c("miRNA"="red","lincRNA"="blue")))
+dev.off()
+
+tmp=hm.input2%>%filter(cluster %in% c(16,17,20))
+tmp
+HM1=tmp[,7:(ncol(hm.input2)-1)]
+HM1
+pdf("n2.PASusageacrosstissues_coding2.pdf",width=8,height=5)
+Heatmap(HM1, name = "PAS usage (Proximal/ALL)", na_col = "grey",
+        show_row_names = F,cluster_columns = F,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = tmp$cluster)#+#+rowAnnotation(Coding=as.factor(hm.input2$coding),col=list(Coding=c("miRNA"="red","lincRNA"="blue")))
+dev.off()
+```
+
+
+
+
+
+
+```{R}
+#install.packages("factoextra")
+#library(factoextra)
+
+res.pca <- prcomp(HM3, scale = TRUE)
+
+#install.packages("devtools")
+#library(devtools)
+#install_github("vqv/ggbiplot")
+install.packages('ggfortify')
+library(ggfortify)
+#library(ggbiplot)
+autoplot(kmeans(HM3,6),data=hm.input2)
+autoplot(fanny(HM3,6),frame=T)
+HM3
+```
+
+
+```{R}
+tmp=spr.dat%>%filter(n==3)
+
+tmp.long=tmp%>%gather(-chr,-start,-end,-id,-coding,-sumrc,-strand,-gene,-hg19.ENST,-CPSpos,-CPSposIndex,-pos,-n,key="tissue",value="rc")
+tmp.long=tmp.long%>%mutate(rc=as.numeric(rc))%>%
+  group_by(tissue,gene,hg19.ENST)%>%mutate("ratio"=rc/sum(rc))%>%ungroup()
+fin=tmp.long%>%group_by(tissue,gene,hg19.ENST)%>%separate(CPSpos,c("chr","coordinate"),sep=":",remove=F)%>%mutate(coordinate=as.numeric(coordinate))%>%arrange(CPSposIndex)%>%
+  mutate(distance1.2=abs(coordinate[1]-coordinate[2]))%>%
+  mutate(distance2.3=abs(coordinate[2]-coordinate[3]))%>%
+  mutate(distance1.3=abs(coordinate[1]-coordinate[3]))%>%
+  
+  
+  ungroup()%>%select(gene,hg19.ENST,CPSposIndex,pos,n,tissue,ratio,contains("distance"))%>%spread(CPSposIndex,ratio)%>%arrange(-`1`,-`2`)
+fin
+write.table(fin,"PAS.distance.ratio.n3.txt",col.names=T,row.names = F, quote=F,sep="\t")
+
+fin%>%select(hg19.ENST,gene,`1`)
+fin%>%summarise(n_distinct(hg19.ENST))#1646
+
+
+library(dendextend)
+library("cluster")
+set.seed(2)
+hm.input=fin%>%select(gene,hg19.ENST,tissue,n,`1`,distance1.2)%>%spread(tissue,`1`)
+head(hm.input)
+hm.input2=hm.input%>%na.omit()
+pa = pam(hm.input2[,5:ncol(hm.input)], k = 25)
+hm.input2$cluster=pa$clustering
+HM3=hm.input2[,5:ncol(hm.input)]
+row_dend = hclust(dist(hm.input2[,5:ncol(hm.input)]))
+ha = HeatmapAnnotation(df = data.frame(TimeuponLPS= as.factor(c(0,1,2,4))))
+pdf("n3.PASusageacrosstissues.pdf",width=6,height=25)
+Heatmap(HM3, name = "PAS usage (Proximal/Distal)", na_col = "grey",
+        show_row_names = F,cluster_columns = T,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = paste0("C", pa$clustering))
+dev.off()
+seq(0,1,10)
+```
+```{R}
+tmp=spr.dat%>%filter(n==4)
+
+tmp.long=tmp%>%gather(-chr,-start,-end,-id,-coding,-sumrc,-strand,-gene,-hg19.ENST,-CPSpos,-CPSposIndex,-pos,-n,key="tissue",value="rc")
+tmp.long=tmp.long%>%mutate(rc=as.numeric(rc))%>%
+  group_by(tissue,gene,hg19.ENST)%>%mutate("ratio"=rc/sum(rc))%>%ungroup()
+fin=tmp.long%>%group_by(tissue,gene,hg19.ENST)%>%separate(CPSpos,c("chr","coordinate"),sep=":",remove=F)%>%mutate(coordinate=as.numeric(coordinate))%>%arrange(CPSposIndex)%>%
+  mutate(distance1.2=abs(coordinate[1]-coordinate[2]))%>%
+  mutate(distance2.3=abs(coordinate[2]-coordinate[3]))%>%
+  mutate(distance1.3=abs(coordinate[1]-coordinate[3]))%>%
+    mutate(distance1.4=abs(coordinate[1]-coordinate[4]))%>%
+    mutate(distance2.4=abs(coordinate[2]-coordinate[4]))%>%
+    mutate(distance3.4=abs(coordinate[3]-coordinate[4]))%>%
+  
+  
+  ungroup()%>%select(gene,hg19.ENST,CPSposIndex,pos,n,tissue,ratio,contains("distance"))%>%spread(CPSposIndex,ratio)%>%arrange(-`1`,-`2`,-`3`)
+
+write.table(fin,"PAS.distance.ratio.n4.txt",col.names=T,row.names = F, quote=F,sep="\t")
+
+fin%>%select(hg19.ENST,gene,`1`)
+fin%>%summarise(n_distinct(hg19.ENST))#485
+
+
+library(dendextend)
+library("cluster")
+set.seed(2)
+hm.input=fin%>%select(gene,hg19.ENST,tissue,n,`1`,distance1.4)%>%spread(tissue,`1`)
+head(hm.input)
+hm.input2=hm.input%>%na.omit()
+pa = pam(hm.input2[,5:ncol(hm.input)], k = 25)
+hm.input2$cluster=pa$clustering
+HM3=hm.input2[,5:ncol(hm.input)]
+row_dend = hclust(dist(hm.input2[,5:ncol(hm.input)]))
+ha = HeatmapAnnotation(df = data.frame(TimeuponLPS= as.factor(c(0,1,2,4))))
+pdf("n4.PASusageacrosstissues.pdf",width=6,height=25)
+Heatmap(HM3, name = "PAS usage (Proximal/Distal)", na_col = "grey",
+        show_row_names = T,cluster_columns = T,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = paste0("C", pa$clustering))
+dev.off()
+seq(0,1,10)
+```
+Genes with FIVE PASs
+```{R}
+tmp=spr.dat%>%filter(n==5)
+
+tmp.long=tmp%>%gather(-chr,-start,-end,-id,-coding,-sumrc,-strand,-gene,-hg19.ENST,-CPSpos,-CPSposIndex,-pos,-n,key="tissue",value="rc")
+tmp.long=tmp.long%>%mutate(rc=as.numeric(rc))%>%
+  group_by(tissue,gene,hg19.ENST)%>%mutate("ratio"=rc/sum(rc))%>%ungroup()
+fin=tmp.long%>%group_by(tissue,gene,hg19.ENST)%>%separate(CPSpos,c("chr","coordinate"),sep=":",remove=F)%>%mutate(coordinate=as.numeric(coordinate))%>%arrange(CPSposIndex)%>%
+  mutate(distance1.2=abs(coordinate[1]-coordinate[2]))%>%
+  mutate(distance2.3=abs(coordinate[2]-coordinate[3]))%>%
+  mutate(distance1.3=abs(coordinate[1]-coordinate[3]))%>%
+    mutate(distance1.4=abs(coordinate[1]-coordinate[4]))%>%
+    mutate(distance2.4=abs(coordinate[2]-coordinate[4]))%>%
+    mutate(distance3.4=abs(coordinate[3]-coordinate[4]))%>%
+    mutate(distance1.5=abs(coordinate[1]-coordinate[5]))%>%
+    mutate(distance2.5=abs(coordinate[2]-coordinate[5]))%>%
+    mutate(distance3.5=abs(coordinate[3]-coordinate[5]))%>%
+    mutate(distance4.5=abs(coordinate[4]-coordinate[5]))%>%
+  
+  
+  ungroup()%>%select(gene,hg19.ENST,CPSposIndex,pos,n,tissue,ratio,contains("distance"))%>%spread(CPSposIndex,ratio)%>%arrange(-`1`,-`2`,-`3`)
+
+write.table(fin,"PAS.distance.ratio.n5.txt",col.names=T,row.names = F, quote=F,sep="\t")
+
+fin%>%select(hg19.ENST,gene,`1`)
+fin%>%summarise(n_distinct(hg19.ENST))#106
+
+fin%>%filter(tissue=="hES")
+library(dendextend)
+library("cluster")
+set.seed(2)
+hm.input=fin%>%select(gene,hg19.ENST,tissue,n,`1`,distance1.4)%>%spread(tissue,`1`)
+head(hm.input)
+hm.input2=hm.input%>%na.omit()
+pa = pam(hm.input2[,5:ncol(hm.input)], k = 25)
+hm.input2$cluster=pa$clustering
+HM3=hm.input2[,5:ncol(hm.input)]
+hm.input2=hm.input2%>%unite("id",c(gene,hg19.ENST),sep=":",remove=F)
+rownames(HM3)=hm.input2$id
+row_dend = hclust(dist(hm.input2[,5:ncol(hm.input)]))
+ha = HeatmapAnnotation(df = data.frame(TimeuponLPS= as.factor(c(0,1,2,4))))
+pdf("n5.PASusageacrosstissues.pdf",width=10,height=25)
+Heatmap(HM3, name = "PAS usage (Proximal/Distal)", na_col = "grey",
+        show_row_names = T,cluster_columns = T,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = paste0("C", pa$clustering))
+dev.off()
+seq(0,1,10)
+```
+
+Genes with SIX PASs
+```{R}
+tmp=spr.dat%>%filter(n==6)
+
+tmp.long=tmp%>%gather(-chr,-start,-end,-id,-coding,-sumrc,-strand,-gene,-hg19.ENST,-CPSpos,-CPSposIndex,-pos,-n,key="tissue",value="rc")
+tmp.long=tmp.long%>%mutate(rc=as.numeric(rc))%>%
+  group_by(tissue,gene,hg19.ENST)%>%mutate("ratio"=rc/sum(rc))%>%ungroup()
+fin=tmp.long%>%group_by(tissue,gene,hg19.ENST)%>%separate(CPSpos,c("chr","coordinate"),sep=":",remove=F)%>%mutate(coordinate=as.numeric(coordinate))%>%arrange(CPSposIndex)%>%
+#  mutate(distance1.2=abs(coordinate[1]-coordinate[2]))%>%
+ # mutate(distance2.3=abs(coordinate[2]-coordinate[3]))%>%
+  #mutate(distance1.3=abs(coordinate[1]-coordinate[3]))%>%
+   # mutate(distance1.4=abs(coordinate[1]-coordinate[4]))%>%
+    #mutate(distance2.4=abs(coordinate[2]-coordinate[4]))%>%
+    #mutate(distance3.4=abs(coordinate[3]-coordinate[4]))%>%
+    #mutate(distance1.5=abs(coordinate[1]-coordinate[5]))%>%
+    #mutate(distance2.5=abs(coordinate[2]-coordinate[5]))%>%
+    #mutate(distance3.5=abs(coordinate[3]-coordinate[5]))%>%
+    #mutate(distance4.5=abs(coordinate[4]-coordinate[5]))%>%
+  
+  
+  ungroup()%>%select(gene,hg19.ENST,CPSposIndex,pos,n,tissue,ratio,contains("distance"))%>%spread(CPSposIndex,ratio)%>%arrange(-`1`,-`2`,-`3`)
+
+write.table(fin,"PAS.distance.ratio.n6.txt",col.names=T,row.names = F, quote=F,sep="\t")
+
+fin%>%select(hg19.ENST,gene,`1`)
+tissue_=fin%>%arrange(tissue)%>%distinct(tissue)%>%unlist()
+fin%>%summarise(n_distinct(hg19.ENST))#17
+for (i in 1:17){
+  fintmp=fin%>%filter(tissue==tissue_[2])
+  set.seed(2)
+  hm.input=fintmp%>%select(gene,hg19.ENST,n,`1`,`2`,`3`,`4`,`5`,`6`)
+  hm.input2=hm.input%>%na.omit()
+  HM3=hm.input2[4:ncol(hm.input)]
+  HM3
+  hm.input2=hm.input2%>%unite("id",c(gene,hg19.ENST),sep=":",remove=F);rownames(HM3)=hm.input2$id
+  pa = pam(HM3, k = 4)
+  hm.input2$cluster=pa$clustering
+  name=paste0(tissue_[1],".n6.PASusageacrosstissues.pdf")
+  pdf(paste0(tissue_[2],".n6.PASusageacrosstissues.pdf"),width=10,height=25)
+  Heatmap(HM3, name = "PAS usage (Proximal/Distal)", na_col = "grey",
+        show_row_names = T,cluster_columns = F,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = paste0("C", pa$clustering))
+  dev.off()
+}
+
+
+
+
+
+library(dendextend)
+library("cluster")
+set.seed(2)
+hm.input=fin%>%select(gene,hg19.ENST,tissue,n,`6`)%>%spread(tissue,`6`)
+head(hm.input)
+hm.input2=hm.input%>%na.omit()
+pa = pam(hm.input2[,4:ncol(hm.input)], k = 4)
+hm.input2$cluster=pa$clustering
+HM3=hm.input2[,4:ncol(hm.input)]
+hm.input2=hm.input2%>%unite("id",c(gene,hg19.ENST),sep=":",remove=F)
+rownames(HM3)=hm.input2$id
+#row_dend = hclust(dist(hm.input2[,5:ncol(hm.input)]))
+#ha = HeatmapAnnotation(df = data.frame(TimeuponLPS= as.factor(c(0,1,2,4))))
+pdf("n6.PASusageacrosstissues.pdf",width=10,height=25)
+Heatmap(HM3, name = "PAS usage (Proximal/All)", na_col = "grey",
+        show_row_names = T,cluster_columns = F,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = paste0("C", pa$clustering))
+dev.off()
+seq(0,1,10)
+```
+Genes with 7PASs
+```{R}
+tmp=spr.dat%>%filter(n==7)
+
+tmp.long=tmp%>%gather(-chr,-start,-end,-id,-coding,-sumrc,-strand,-gene,-hg19.ENST,-CPSpos,-CPSposIndex,-pos,-n,key="tissue",value="rc")
+tmp.long=tmp.long%>%mutate(rc=as.numeric(rc))%>%
+  group_by(tissue,gene,hg19.ENST)%>%mutate("ratio"=rc/sum(rc))%>%ungroup()
+fin=tmp.long%>%group_by(tissue,gene,hg19.ENST)%>%separate(CPSpos,c("chr","coordinate"),sep=":",remove=F)%>%mutate(coordinate=as.numeric(coordinate))%>%arrange(CPSposIndex)%>%
+#  mutate(distance1.2=abs(coordinate[1]-coordinate[2]))%>%
+ # mutate(distance2.3=abs(coordinate[2]-coordinate[3]))%>%
+  #mutate(distance1.3=abs(coordinate[1]-coordinate[3]))%>%
+   # mutate(distance1.4=abs(coordinate[1]-coordinate[4]))%>%
+    #mutate(distance2.4=abs(coordinate[2]-coordinate[4]))%>%
+    #mutate(distance3.4=abs(coordinate[3]-coordinate[4]))%>%
+    #mutate(distance1.5=abs(coordinate[1]-coordinate[5]))%>%
+    #mutate(distance2.5=abs(coordinate[2]-coordinate[5]))%>%
+    #mutate(distance3.5=abs(coordinate[3]-coordinate[5]))%>%
+    #mutate(distance4.5=abs(coordinate[4]-coordinate[5]))%>%
+  
+  
+  ungroup()%>%select(gene,hg19.ENST,CPSposIndex,pos,n,tissue,ratio,contains("distance"))%>%spread(CPSposIndex,ratio)%>%arrange(-`1`,-`2`,-`3`)
+
+write.table(fin,"PAS.distance.ratio.n7.txt",col.names=T,row.names = F, quote=F,sep="\t")
+fin%>%summarise(n_distinct(hg19.ENST))#2
+X=fin%>%filter(gene=="ATRX")
+X2=X[,6:ncol(X)]
+rownames(X2)=X$tissue
+corr=cor(t(X2))
+install.packages("corrplot")
+library(corrplot)
+
+corrplot(corr)
+spr.dat%>%group_by(coding)%>%summarise(n_distinct(gene))
+```

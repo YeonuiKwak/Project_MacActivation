@@ -1,0 +1,673 @@
+---
+title: "Step3: DEX-seq: statistincal significance of PAS change."
+author: "Yeonui+Kwak"
+date: "7/21/2021"
+output: html_document
+---
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+
+library(gridExtra)
+#source("scatterPlot.R")
+```
+
+#protein coding genes with two distinct PASs.
+1.Calculate statistical significance using Fisher's exact test.
+
+```{r}
+# Function to apply chisq.test() to tibble groups
+diffCPS.test = function(tm, cn, rc) {
+	cont.t = data.frame(time = tm, cpsNo = cn, readCount = rc) %>%
+		spread(time, readCount)
+	return(chisq.test(cont.t[, -1])$p.value)}
+
+cr.pv = final.tmp %>%
+	ungroup() %>%
+	group_by(newid) %>%
+	summarise(pval = diffCPS.test(tm=time,cn=Tandem,rc=readcount))
+
+cr.pv = cr.pv %>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))
+
+cr.pv2 = final.tmp %>%
+	ungroup() %>%unite("tandemutrlen",c(Tandem,utrlen),sep=":",remove=F)%>%
+	group_by(newid) %>%
+	summarise(pcor = TSI.cor.test(cps=Tandem,tm=time, rc=readcount,cpsutrlen=tandemutrlen))
+
+cr.pv=cr.pv%>%inner_join(cr.pv2,by="newid")#%>%inner_join(cr.pv3, by="hgnc")
+
+cr.pv=cr.pv%>%filter_all(all_vars(!is.nan(.)))
+```
+
+```{R}
+sample=c(
+"bcells-1",
+"bcells-2",
+"blcl",
+"brain",
+"breast",
+"hES",
+"hek293",
+"hela",
+"mcf10a.hras-1",
+"mcf10a.hras-2",
+"mcf10a-1",
+"mcf10a-2",
+"mcf7",
+"ntera",
+"ovary",
+"skmuscle",
+"testis"
+)
+
+sample1=c(
+"mean.bcell",
+"bcells.1",
+"bcells.2",
+"blcl"
+)
+
+sample2=c(
+
+"mcf10a.hras.1",
+"mcf10a.hras.2",
+"mcf10a.1",
+"mcf10a.2"
+
+)
+```
+
+
+```{R}
+dat=read.table("n2.genes.readcount.acrosstissues.txt",header=T,stringsAsFactors = F)
+dat=dat%>%mutate(mean.bcell=(bcells.1+bcells.2)/2)
+head(dat)
+dat.long=dat%>%gather(-chr,-start,-coding,-end,-id,-sumrc,-strand,-gene,-hg19.ENST,-CPSpos,-CPSposIndex,-pos,-n,key="tissue",value="rc")
+head(dat.long)
+dat.long%>%filter(hg19.ENST=="ENST00000263741")%>%filter(tissue %in% cmb.tmp[,2])%>%summarise(P.VAL=diffCPS.test(ti=tissue,cn=CPSposIndex,rc=rc))
+geneid=dat%>%select(hg19.ENST,gene)%>%distinct_at(vars(hg19.ENST,gene))
+#4253genes
+```
+#testis specific change
+
+```{r}
+diffCPS.test = function(ti, cn, rc) {
+	cont.t = data.frame(tissue = ti, cpsNo = cn, readCount = rc) %>%
+		spread(cpsNo, readCount)
+	return(fisher.test(cont.t[, -1])$p.value)}
+
+k=dat.long%>%
+  filter(tissue %in% c("testis","hES"))%>%
+  group_by(gene,hg19.ENST)%>%
+  mutate(sum.rc=sum(rc))%>%ungroup()%>%
+  filter(sum.rc>5)%>%
+  group_by(gene,hg19.ENST)%>%
+
+  summarise(pval=diffCPS.test(ti=tissue,cn=CPSposIndex,rc=rc))%>%ungroup()%>%na.omit()%>%mutate(fdr=p.adjust(pval, method = "fdr"))
+k
+```
+heatmap
+```{R}
+#BiocManager::install("ComplexHeatmap")
+library(ComplexHeatmap)
+### Heatmap with Annotation
+library(dendextend)
+library("circlize")
+library("RColorBrewer")
+library(cluster)    # clustering algorithms
+#install.packages("factoextra")
+library(factoextra)
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "#999999", "goldenrod2", "orangered1", "red") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+```
+
+```{r}
+install.packages("devtools")
+library(devtools)
+install_github("jokergoo/ComplexHeatmap")
+
+#library(dendextend)
+library("cluster")
+set.seed(2)
+
+
+hm.input2=read.table("n2.PAS.protein.coding.genes.ratio.across.tissues.txt",header=T,stringsAsFactors = F)
+head(hm.input2)
+#pa = pam(hm.input2[,6:(ncol(hm.input2))], k = 4)
+#hm.input2$cluster=pa$clustering
+tmp=hm.input2%>%inner_join(k%>%select(-gene),by="hg19.ENST")%>%na.omit()%>%filter(fdr<0.01)
+HM3=tmp[,7:(ncol(tmp)-3)]
+HM3=tmp[,c("hES","testis")]
+#HM3=data.frame("pPASusage"=HM3$testis-HM3$hES)
+tmp=tmp%>%unite("id",c(gene,hg19.ENST),sep=":",remove=F)
+rownames(HM3)=tmp$id
+#row_dend = hclust(dist(hm.input2[,5:ncol(hm.input)]))
+row_ha = rowAnnotation(Coding=as.factor(hm.input2$coding),col=list(Coding=c("miRNA"="red","lincRNA"="blue")))
+ha = HeatmapAnnotation(tissue= )
+library(circlize)
+col_fun = colorRamp2(c(0, 5, 10), c("blue", "white", "red"))
+Heatmap(HM3, name = "PAS usage (Proximal/ALL)", na_col = "grey",
+        show_row_names = T,cluster_columns =F,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),cluster_rows =row_dend,row_dend_reorder = F)
+install.packages("dendsort")
+library(dendsort)
+row_dend = dendsort(hclust(dist(HM3,method="euclidian")))
+row_dend = color_branches(row_dend, k = 2)
+
+
+
+
+#method2
+rows.cor <- cor(t(HM3), use = "pairwise.complete.obs", method = "pearson")
+hclust.row <- hclust(as.dist(1-rows.cor),method="complete")
+tmp$perasoncluster=cutree(hclust.row, k=2)
+tmp=tmp%>%mutate(perasoncluster2=ifelse((testis<0.5&hES<0.5)|(testis>0.5&hES>0.5),"mild","drastic"))
+tmp=tmp%>%unite("cl",c("perasoncluster" ,"perasoncluster2"),sep=":")
+tmp%>%group_by(cl)%>%summarise(n())
+
+pdf("n2.differential APAacrosstissuesp0.01.pdf",width=4,height=4)
+Heatmap(HM3, name = "pPAS usage (Proximal/ALL)", na_col = "grey",
+        show_row_names = F,cluster_columns = T,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = tmp$perasoncluster,a)+rowAnnotation(APAswitch=(tmp$perasoncluster), col=list(APAswitch=col))
+dev.off()
+pdf("n2.differential APAacrosstissuesp0.01_detailed.pdf",width=4,height=4)
+t=1:4
+names(t)=unique(tmp$cl)
+Heatmap(HM3, name = "pPAS usage (Proximal/ALL)", na_col = "grey",
+        show_row_names = F,cluster_columns = T,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = tmp$cl)+rowAnnotation(APAswitch= (tmp$cl),col=list(APAswitch=c(t)))
+col=colorRamp2(c(1, 3, 6), c("blue", "white", "red"))
+paste(c(1:4),yk.col(4),sep = "=")
+dev.off()
+
+```
+
+
+
+extra
+```{R}
+
+library("pheatmap")
+pheatmap(
+  HM3, 
+  #scale = "row", 
+  #clustering_distance_cols = as.dist(1 - cols.cor),
+  clustering_distance_rows = as.dist(1 - rows.cor),
+  #Rowv = as.dendrogram(hclust.row),
+  trace = "none", density.info = "none"
+  )
+library("gplots")
+heatmap.2(
+  as.matrix(HM3), 
+  #scale = "row", 
+  #clustering_distance_cols = as.dist(1 - cols.cor),
+  #clustering_distance_rows = as.dist(1 - rows.cor),
+  Rowv = as.dendrogram(hclust.row),
+  trace = "none", density.info = "none",col = bluered(100),
+  )
+
+```
+```{R}
+install.packages("devtools")
+library(devtools)
+install.packages('installr')
+library(installr)
+install_github('andreacirilloac/updateR')
+library(updateR)
+updateR()
+install.packages('IRkernel') 
+IRkernel::installspec()
+
+```
+
+
+
+
+```{r}
+# Function to apply chisq.test() to tibble groups
+diffCPS.test = function(ti, cn, rc) {
+	cont.t = data.frame(tissue = ti, cpsNo = cn, readCount = rc) %>%
+		spread(cpsNo, readCount)
+	return(fisher.test(cont.t[, -1])$p.value)}
+#all possible combinatinos of two different tissues
+
+s=factor(sample1,levels = c("bcells.1","bcells.2","mean.bcell","blcl"))
+cmb.tmp=combn(sort(s),2)
+pval.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  df=dat.long%>%ungroup()%>%
+    group_by(hg19.ENST)%>%
+    filter(tissue %in% comb)%>%
+    summarise(pval= diffCPS.test(ti=tissue,cn=CPSposIndex,rc=rc))
+  pval.list[[id]]=df%>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))%>%
+  mutate(comparison=rep(id))
+}
+
+str(pval.list)
+df.pval=reduce(pval.list,rbind)
+
+
+df.pval%>%filter(fdr<0.05)%>%group_by(comparison)%>%summarise(n())
+
+```
+
+#Calculate RED score
+
+```{r}
+tmp=dat.long%>%mutate(rc=as.numeric(rc))%>%
+  group_by(tissue,gene,hg19.ENST)%>%
+  separate(CPSpos,c("chr","coordinate"),sep=":",remove=F)%>%mutate(coordinate=as.numeric(coordinate))%>%
+  mutate(distance1.2=abs(coordinate[1]-coordinate[2]))%>%ungroup()%>%
+  select(gene,hg19.ENST,CPSposIndex,pos,n,tissue,rc,distance1.2,coding)%>%spread(CPSposIndex,rc)%>%arrange(-`1`)
+tmp2=tmp%>%filter(`1`>0,`2`>0)%>%mutate("log2(D/P)"=log2(`2`/`1`))
+tmp2%>%filter(hg19.ENST=="ENST00000002165")
+#direction is important.
+
+RED.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%filter(tissue %in% comb)%>%
+    select(hg19.ENST,`log2(D/P)`,tissue,distance1.2)%>%
+    spread(tissue,`log2(D/P)`)%>%na.omit()
+#as string
+  library(rlang)
+  var1=as.character(comb[2])
+  var2=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(RED.stat=.data[[var1]]-.data[[var2]])%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,distance1.2,RED.stat,comparison,.data[[var1]],.data[[var2]])
+  RED.list[[x]]=sp.tmp
+}
+df.RED
+df.RED=reduce(RED.list,rbind)
+df.RED=df.RED%>%unite("id",c(hg19.ENST,comparison),sep=":")
+
+#ratio pf pPAS
+pPAS.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%filter(tissue %in% comb)%>%
+    select(hg19.ENST,`1`,tissue,distance1.2)%>%
+    spread(tissue,`1`)%>%na.omit()
+sp.tmp
+  #as string
+  library(rlang)
+  var2=as.character(comb[2])
+  var1=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(pPAS.ratio=.data[[var2]]/.data[[var1]])%>%ungroup()%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,pPAS.ratio,comparison)
+  pPAS.list[[x]]=sp.tmp
+}
+df.pPAS=reduce(pPAS.list,rbind)
+df.pPAS=df.pPAS%>%unite("id",c(hg19.ENST,comparison),sep=":")
+df.pPAS
+
+#dPAS ratio
+
+dPAS.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%filter(tissue %in% comb)%>%
+    select(hg19.ENST,`2`,tissue,distance1.2)%>%
+    spread(tissue,`2`)%>%na.omit()
+sp.tmp
+  #as string
+  library(rlang)
+  var2=as.character(comb[2])
+  var1=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(dPAS.ratio=.data[[var2]]/.data[[var1]])%>%ungroup()%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,dPAS.ratio,comparison)
+  dPAS.list[[x]]=sp.tmp
+}
+df.dPAS=reduce(dPAS.list,rbind)
+df.dPAS=df.dPAS%>%unite("id",c(hg19.ENST,comparison),sep=":")
+df.dPAS
+
+```
+
+```{R}
+df.final=df.pval%>%unite("id",c(hg19.ENST,comparison),sep=":",remove=F)%>%inner_join(df.RED,by="id")%>%inner_join(df.pPAS,by="id")%>%inner_join(df.dPAS,by="id")
+head(df.final)
+#df.final=df.final%>%select(id,hg19.ENST,comparison,pval,fdr,RED.stat,distance1.2,bcells.1,bcells.2,blcl)
+summary(df.final)
+
+```
+
+```{R}
+log2(0.8)
+test=df.final%>%filter(comparison=="mean.bcell vs blcl")%>%mutate(group=ifelse(RED.stat>log2(1.2)&fdr<0.05,"to Distal",ifelse(RED.stat<log2(1/1.2)&fdr<0.05,"to Proximal","No change")))%>%mutate(group=factor(group,levels=c("to Proximal","No change","to Distal")))
+test%>%group_by(group)%>%summarise(n())
+pdf("scatterplot.blclvsnaiveBcels2.pdf",height=3,width=4)
+ggplot(test,aes(x=log2(pPAS.ratio),y=log2(dPAS.ratio),col=group,))+
+  ggtitle("naive B cells.2 vs B LCL\nProliferative transformation")+
+    geom_point(size=0.5)+scale_colour_manual(values = yk.col(3))+theme_bw()+ylab("Log2 dPAS ratio")+xlab("Log2 pPAS ratio")
+dev.off()
+
+df.final
+df=df.final%>%ungroup()%>%mutate(Change=ifelse(RED.stat>0.26&fdr<0.05,"to Distal",ifelse(RED.stat<log2(0.8)&fdr<0.05,"to Proximal","No change")))%>%mutate(Change=factor(Change,levels=c("to Proximal","No change","to Distal")))%>%inner_join(geneid,by="hg19.ENST")
+
+write.table(df,"bcellsvsblcl.APA.results.txt",sep="\t",col.names = T,row.names = F,quote = F)
+```
+
+during transformation, APA switched genes. worth for further testing
+
+```{R}
+
+test%>%filter(group=="to Proximal")%>%inner_join(geneid,by="hg19.ENST")%>%select(gene,group,RED.stat,fdr)%>%arrange(RED.stat)
+test%>%filter(group=="to Distal")%>%inner_join(geneid,by="hg19.ENST")%>%select(gene,group,RED.stat,fdr)%>%arrange(-RED.stat)
+```
+
+Oncogenic transformation
+```{R}
+sample2=c(
+
+"mcf10a.1",
+"mcf10a.2",
+"mcf10a.hras.1",
+"mcf10a.hras.2"
+
+)
+
+s=factor(sample2,levels = c(
+
+"mcf10a.1",
+"mcf10a.2",
+"mcf10a.hras.1",
+"mcf10a.hras.2"
+
+))
+cmb.tmp=combn(sort(s),2)
+cmb.tmp
+RED.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%filter(tissue %in% comb)%>%
+    select(hg19.ENST,`log2(D/P)`,tissue,distance1.2)%>%
+    spread(tissue,`log2(D/P)`)%>%na.omit()
+#as string
+  library(rlang)
+  var1=as.character(comb[2])
+  var2=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(RED.stat=.data[[var1]]-.data[[var2]])%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,distance1.2,RED.stat,comparison,.data[[var1]],.data[[var2]])
+  RED.list[[x]]=sp.tmp
+}
+df.RED
+df.RED=reduce(RED.list,rbind)
+df.RED=df.RED%>%unite("id",c(hg19.ENST,comparison),sep=":")
+
+#ratio pf pPAS
+pPAS.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%filter(tissue %in% comb)%>%
+    select(hg19.ENST,`1`,tissue,distance1.2)%>%
+    spread(tissue,`1`)%>%na.omit()
+sp.tmp
+  #as string
+  library(rlang)
+  var2=as.character(comb[2])
+  var1=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(pPAS.ratio=.data[[var2]]/.data[[var1]])%>%ungroup()%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,pPAS.ratio,comparison)
+  pPAS.list[[x]]=sp.tmp
+}
+df.pPAS=reduce(pPAS.list,rbind)
+df.pPAS=df.pPAS%>%unite("id",c(hg19.ENST,comparison),sep=":")
+df.pPAS
+
+#dPAS ratio
+
+#ratio pf pPAS
+dPAS.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%filter(tissue %in% comb)%>%
+    select(hg19.ENST,`2`,tissue,distance1.2)%>%
+    spread(tissue,`2`)%>%na.omit()
+sp.tmp
+  #as string
+  library(rlang)
+  var2=as.character(comb[2])
+  var1=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(dPAS.ratio=.data[[var2]]/.data[[var1]])%>%ungroup()%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,dPAS.ratio,comparison)
+  dPAS.list[[x]]=sp.tmp
+}
+df.dPAS=reduce(dPAS.list,rbind)
+df.dPAS=df.dPAS%>%unite("id",c(hg19.ENST,comparison),sep=":")
+df.dPAS
+
+
+
+
+```
+
+```{R}
+pval.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  df=dat.long%>%ungroup()%>%
+    group_by(hg19.ENST)%>%
+    filter(tissue %in% comb)%>%
+    summarise(pval= diffCPS.test(ti=tissue,cn=CPSposIndex,rc=rc))
+  pval.list[[id]]=df%>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))%>%
+  mutate(comparison=rep(id))
+}
+
+str(pval.list)
+df.pval=reduce(pval.list,rbind)
+
+df.final=df.pval%>%unite("id",c(hg19.ENST,comparison),sep=":",remove=F)%>%inner_join(df.RED,by="id")%>%inner_join(df.pPAS,by="id")%>%inner_join(df.dPAS,by="id")
+head(df.final)
+#df.final=df.final%>%select(id,hg19.ENST,comparison,pval,fdr,RED.stat,distance1.2,bcells.1,bcells.2,blcl)
+summary(df.final)
+
+```
+
+
+
+```{R}
+
+test=df.final%>%filter(comparison=="mcf10a.hras.1 vs mcf10a.hras.2")%>%mutate(group=ifelse(RED.stat>log2(1.2)&fdr<0.05,"to Distal",ifelse(RED.stat<log2(1/1.2)&fdr<0.05,"to Proximal","No change")))%>%mutate(group=factor(group,levels=c("to Proximal","No change","to Distal")))
+1/1.2
+test%>%group_by(group)%>%summarise(n())
+pdf("scatterplot.mcf10a1vsmcf10a.hras1.pdf",height=3,width=4)
+ggplot(test,aes(x=log2(pPAS.ratio),y=log2(dPAS.ratio),col=group))+
+  ggtitle("MCF10A vs MCF10A-HRAS\nCancer transformation")+
+    geom_point(size=0.5)+scale_colour_manual(values = yk.col(3))+theme_bw()+ylab("Log2 dPAS ratio")+xlab("Log2 pPAS ratio")
+dev.off()
+```
+
+```{R}
+df=df.final%>%ungroup()%>%mutate(Change=ifelse(RED.stat>0.26&fdr<0.05,"to Distal",ifelse(RED.stat<log2(0.8)&fdr<0.05,"to Proximal","No change")))%>%mutate(Change=factor(Change,levels=c("to Proximal","No change","to Distal")))
+write.table(df,"mcf10avsmcf10a.hras.APA.results.txt",sep="\t",col.names = T,row.names = F,quote = F)
+```
+
+
+
+
+
+Oncogenic transformation
+```{R}
+sample2=c(
+
+"hES",
+"brain"
+
+)
+
+s=factor(sample2,levels = c(
+
+"hES",
+"brain"
+
+))
+cmb.tmp=combn(sort(s),2)
+cmb.tmp
+RED.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%filter(tissue %in% comb)%>%
+    select(hg19.ENST,`log2(D/P)`,tissue,distance1.2)%>%
+    spread(tissue,`log2(D/P)`)%>%na.omit()
+#as string
+  library(rlang)
+  var1=as.character(comb[2])
+  var2=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(RED.stat=.data[[var1]]-.data[[var2]])%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,distance1.2,RED.stat,comparison,.data[[var1]],.data[[var2]])
+  RED.list[[x]]=sp.tmp
+}
+df.RED
+df.RED=reduce(RED.list,rbind)
+df.RED=df.RED%>%unite("id",c(hg19.ENST,comparison),sep=":")
+
+#ratio pf pPAS
+pPAS.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%filter(tissue %in% comb)%>%
+    select(hg19.ENST,`1`,tissue,distance1.2)%>%
+    spread(tissue,`1`)%>%na.omit()
+sp.tmp
+  #as string
+  library(rlang)
+  var2=as.character(comb[2])
+  var1=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(pPAS.ratio=.data[[var2]]/.data[[var1]])%>%ungroup()%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,pPAS.ratio,comparison)
+  pPAS.list[[x]]=sp.tmp
+}
+df.pPAS=reduce(pPAS.list,rbind)
+df.pPAS=df.pPAS%>%unite("id",c(hg19.ENST,comparison),sep=":")
+df.pPAS
+
+#dPAS ratio
+
+#ratio pf pPAS
+dPAS.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%filter(tissue %in% comb)%>%
+    select(hg19.ENST,`2`,tissue,distance1.2)%>%
+    spread(tissue,`2`)%>%na.omit()
+sp.tmp
+  #as string
+  library(rlang)
+  var2=as.character(comb[2])
+  var1=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(dPAS.ratio=.data[[var2]]/.data[[var1]])%>%ungroup()%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,dPAS.ratio,comparison)
+  dPAS.list[[x]]=sp.tmp
+}
+df.dPAS=reduce(dPAS.list,rbind)
+df.dPAS=df.dPAS%>%unite("id",c(hg19.ENST,comparison),sep=":")
+df.dPAS
+
+
+
+
+```
+
+```{R}
+pval.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  df=dat.long%>%ungroup()%>%
+    group_by(hg19.ENST)%>%
+    filter(tissue %in% comb)%>%
+    summarise(pval= diffCPS.test(ti=tissue,cn=CPSposIndex,rc=rc))
+  pval.list[[id]]=df%>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))%>%
+  mutate(comparison=rep(id))
+}
+
+str(pval.list)
+df.pval=reduce(pval.list,rbind)
+
+df.final=df.pval%>%unite("id",c(hg19.ENST,comparison),sep=":",remove=F)%>%inner_join(df.RED,by="id")%>%inner_join(df.pPAS,by="id")%>%inner_join(df.dPAS,by="id")
+head(df.final)
+#df.final=df.final%>%select(id,hg19.ENST,comparison,pval,fdr,RED.stat,distance1.2,bcells.1,bcells.2,blcl)
+summary(df.final)
+
+```
+
+
+
+```{R}
+
+test=df.final%>%filter(comparison=="hES vs brain")%>%mutate(group=ifelse(RED.stat>0.26&fdr<0.05,"to Distal",ifelse(RED.stat<log2(0.8)&fdr<0.05,"to Proximal","No change")))%>%mutate(group=factor(group,levels=c("to Proximal","No change","to Distal")))
+test%>%group_by(group)%>%summarise(n())
+pdf("scatterplot.hES vs brain.pdf",height=3,width=4)
+ggplot(test,aes(x=log2(pPAS.ratio),y=log2(dPAS.ratio),col=group))+
+  ggtitle("hES vs Brain\nDifferentitation")+
+    geom_point(size=0.5)+scale_colour_manual(values = yk.col(3))+theme_bw()+ylab("Log2 dPAS ratio")+xlab("Log2 pPAS ratio")
+dev.off()
+```
+
+
+```{R}
+df=df.final%>%ungroup()%>%mutate(Change=ifelse(RED.stat>0.26&fdr<0.05,"to Distal",ifelse(RED.stat<log2(0.8)&fdr<0.05,"to Proximal","No change")))%>%mutate(Change=factor(Change,levels=c("to Proximal","No change","to Distal")))
+write.table(df,"hESvsBrain.APA.results.txt",sep="\t",col.names = T,row.names = F,quote = F)
+```
+
+```

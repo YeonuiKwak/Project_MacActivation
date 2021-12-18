@@ -1,0 +1,383 @@
+---
+title: "Untitled"
+author: "Yeonui+Kwak"
+date: "7/23/2021"
+output: html_document
+---
+```{r}
+getwd()
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+
+library(gridExtra)
+#source("scatterPlot.R")
+```
+
+Load data
+
+```{R}
+
+dat=read.table("n2.genes.readcount.acrosstissues.txt",header=T,stringsAsFactors = F)
+dat2=read.table("rc.per.transcript.hg19.bed",header=F,stringsAsFactors = F)
+head(dat2)
+dat2=dat2%>%select(V4,V8,V10,V12,V13)
+colnames(dat2)=c("hg19.ENST","Exonid","gene","readcount.a375","blocksize")
+dat2=dat2%>%group_by(hg19.ENST)%>%summarise(rc.a375=(sum(readcount.a375)*1000)/sum(blocksize))%>%ungroup()
+dat=dat%>%inner_join(dat2,by="hg19.ENST")
+#a375 readcount >5
+dat%>%filter(coding=="protein_coding")%>%summarise(n_distinct(hg19.ENST))
+dat%>%filter(rc.a375>1)%>%summarise(n_distinct(hg19.ENST))
+#dat=dat%>%mutate(mean.bcell=(bcells.1+bcells.2)/2)
+dat.long=dat%>%gather(-rc.a375,-chr,-start,-coding,-end,-id,-sumrc,-strand,-gene,-hg19.ENST,-CPSpos,-CPSposIndex,-pos,-n,key="tissue",value="rc")
+geneid=dat%>%select(hg19.ENST,gene)%>%distinct_at(vars(hg19.ENST,gene))
+(dat)
+#4253genes
+
+```
+
+```{R}
+
+dat=read.table("n2.genes.readcount.acrosstissues.txt",header=T,stringsAsFactors = F)
+nrow(dat)/2
+dat2=read.csv("hg19.rc.RPKM.threshold0.txt",header=T,stringsAsFactors = F,sep="\t")
+nrow(dat2)
+colnames(dat2)=c("gene","hg19.ENST","length","raw.readcount.a375","norm.count","RPKM")
+dat2%>%filter(gene=="MIA")
+dat2%>%
+  filter(RPKM>1)%>%
+  summarise(n_distinct(gene))
+
+
+x=dat2%>%
+  filter(RPKM>1)%>%select(gene)%>%unique()%>%unlist()
+dat2%>%filter(!(gene %in% x))
+dat=dat%>%inner_join(dat2%>%select(-gene),by="hg19.ENST")
+#a375 readcount >5
+dat%>%filter(coding=="protein_coding")%>%summarise(n_distinct(hg19.ENST))
+
+dat%>%filter(RPKM>1)%>%summarise(n_distinct(hg19.ENST))
+#dat=dat%>%mutate(mean.bcell=(bcells.1+bcells.2)/2)
+dat.long=dat%>%gather(-raw.readcount.a375,-RPKM,-norm.count,-chr,-start,-coding,-end,-id,-sumrc,-strand,-gene,-hg19.ENST,-CPSpos,-CPSposIndex,-pos,-n,key="tissue",value="rc")
+geneid=dat%>%select(hg19.ENST,gene)%>%distinct_at(vars(hg19.ENST,gene))
+dat.long
+#4253genes
+56199-28389
+```
+
+```{R}
+
+dis=read.table("PAS.distance.ratio.n2.txt",header=T,stringsAsFactors = F) #include miRNA, linc, protein coding
+
+head(dis)
+
+dis%>%filter(hg19.ENST=="ENST00000263741")
+dis=dis%>%select(hg19.ENST,pos,distance1.2)%>%arrange(hg19.ENST)%>%distinct
+dis
+dat=dat%>%ungroup()%>%inner_join(dis%>%ungroup,by="hg19.ENST")
+head(dat)
+
+
+
+fin.bin=dat%>%mutate(bin=ifelse(distance1.2<100,"<100",ifelse(distance1.2<300,"100-300",ifelse(distance1.2<1000,"300-1000",ifelse(distance1.2<3000,"1000-3000",">3000")))))%>%mutate(bin=factor(bin,level=c("<100","100-300","300-1000","1000-3000",">3000")))%>%mutate(candidate=ifelse(distance1.2<300,"No candidate","Candiate"))
+
+
+
+
+fin.bin2=fin.bin%>%distinct_at(vars(hg19.ENST),.keep_all=T)
+dat%>%group_by(coding)%>%summarise(n_distinct(hg19.ENST))
+fin.bin%>% filter(coding=="protein_coding")%>%group_by(bin)%>%summarise(n_distinct(hg19.ENST))
+
+write.table(fin.bin%>%filter(bin %in% c("300-1000","1000-3000",">3000")),"genes with distance gt 300.txt",col.names = T,row.names = F,sep="\t",quote = F)
+
+
+
+pdf("Genes with two PASs_distance.pdf",width=8,height=3)
+ggplot(fin.bin2,aes(x=bin,fill=candidate))+geom_bar(stat="count")+facet_wrap(.~coding,scale="free")+theme_bw()+xlab("distance between PAS(proximal-distal,nt)")+
+  ylab("number of genes")+ggtitle("Genes with two PASs")+scale_fill_manual(values=c("red","grey"))+
+  theme(axis.text.x = element_text(angle = 45,hjust=1))#+xlim(c(-40,10000))
+dev.off()
+
+
+fin.bin%>%filter(RPKM>1)%>%group_by(coding,bin)%>%summarise(n_distinct(hg19.ENST))
+
+fin.bin%>%
+  filter(RPKM>1)%>%
+  filter(distance1.2>=300)%>%group_by(coding)%>%summarise(n_distinct(hg19.ENST))
+1423+1192+392
+1395+1175+387
+3238-2529
+index=dat%>%select(id,CPSposIndex)
+a375.expressed=fin.bin%>%
+  filter(RPKM>1)%>%select(hg19.ENST)%>%unlist()
+```
+
+proximal vs distal using rna-seq readcounts in A375 mapped tothe entire genes
+
+```{R}
+utr=read.table("hg19.3UTR.1kbextension.bed11",header=T,stringsAsFactors = F)
+head(utr)
+utr=utr%>%select(chr,start,end,ENST,no,strand,Gene,lastexon)%>%rename(hg19.ENST=ENST)
+
+dis=read.table("PAS.distance.ratio.n2.txt",header=T,stringsAsFactors = F) #include miRNA, linc, protein coding
+dis%>%filter(hg19.ENST=="ENST00000263741")
+dis=dis%>%select(hg19.ENST,pos,distance1.2)%>%arrange(hg19.ENST)%>%distinct
+```
+
+```{r}
+utr.pl=utr%>%inner_join(dis,by="hg19.ENST")%>%group_by(hg19.ENST)%>%arrange(hg19.ENST,no)%>%separate_rows(pos,sep=",")%>%
+  separate(pos,c("chr_","cord"),sep=":",remove=F)%>%ungroup()%>%mutate(cord=as.numeric(cord))%>%select(-chr_)%>%group_by(hg19.ENST,pos)%>%arrange(no)%>%filter(strand=="+")
+
+utr.pl%>%group_by(hg19.ENST,pos)%>%summarise(n=n())%>%ungroup()%>%group_by(n)%>%summarise(n())
+
+#ALL pas in a single 3UTR block
+utr.pl=utr.pl%>%inner_join(utr.pl%>%group_by(hg19.ENST,pos)%>%summarise(n=n())%>%ungroup()%>%group_by(n)%>%filter(n==1)%>%distinct(hg19.ENST)%>%select(hg19.ENST),by="hg19.ENST")
+utr.pl.tmp=utr.pl%>%arrange(hg19.ENST,pos)%>%group_by(hg19.ENST,pos)%>%mutate(newend=cord)%>%mutate(distance.stopcodon=cord-start)
+utr.pl.tmp%>%filter(distance.stopcodon>150)
+
+utr.mn=utr%>%inner_join(dis,by="hg19.ENST")%>%group_by(hg19.ENST)%>%arrange(hg19.ENST,no)%>%separate_rows(pos,sep=",")%>%
+  separate(pos,c("chr_","cord"),sep=":",remove=F)%>%ungroup()%>%mutate(cord=as.numeric(cord))%>%select(-chr_)%>%group_by(hg19.ENST,pos)%>%arrange(no)%>%
+  filter(strand=="-")
+utr.mn%>%group_by(hg19.ENST,pos)%>%summarise(n=n())%>%ungroup()%>%group_by(n)%>%summarise(n())
+utr.mn=utr.mn%>%inner_join(utr.mn%>%group_by(hg19.ENST,pos)%>%summarise(n=n())%>%ungroup()%>%group_by(n)%>%filter(n==1)%>%distinct(hg19.ENST)%>%select(hg19.ENST),by="hg19.ENST")
+utr.mn.tmp=utr.mn%>%arrange(hg19.ENST,pos)%>%group_by(hg19.ENST,pos)%>%mutate(newstart=cord)%>%mutate(distance.stopcodon=end-cord)
+utr.mn.tmp%>%filter(distance.stopcodon>150)
+
+utr.pl.tmp=utr.pl.tmp%>%mutate(end=newend)%>%select(-newend)
+utr.mn.tmp=utr.mn.tmp%>%mutate(start=newstart)%>%select(-newstart)
+final.tmp=bind_rows(utr.pl.tmp%>%ungroup(),utr.mn.tmp%>%ungroup())
+final=final.tmp%>%filter(distance.stopcodon>150)%>%group_by(hg19.ENST)%>%summarise(n=n_distinct(pos))%>%filter(n==2)%>%select(hg19.ENST)%>%ungroup()%>%inner_join(final.tmp,by="hg19.ENST")
+final=final%>%unite("id",c(hg19.ENST,pos),sep="_")
+head(final)
+#utr%>%inner_join(dis,by="hg19.ENST")%>%group_by(hg19.ENST)%>%arrange(hg19.ENST,no)%>%separate_rows(pos,sep=",")%>%
+  separate(pos,c("chr_","cord"),sep=":",remove=F)%>%ungroup()%>%mutate(cord=as.numeric(cord))%>%select(-chr_)%>%group_by(hg19.ENST,pos)%>%arrange(no)%>%summarise(n=n())%>%ungroup()%>%
+  group_by(n)%>%filter(n==1)%>%summarise(n_distinct(hg19.ENST))
+
+#final%>%summarise(n_distinct(hg19.ENST))
+#final.tmp%>%summarise(n_distinct(hg19.ENST))
+finalutr=final%>%select(id,chr,start,end,strand,Gene,distance1.2,n,distance.stopcodon)%>%rename(blockcount=n)%>%inner_join(index,by="id")
+
+(finalutr)
+write.table(finalutr,"hg19.3UTR.tandemPAS2.blockcount1.txt",col.names = T,row.names = F,sep="\t",quote = F)
+```
+#Save proximal PAS upsstream 150 nt into a bed file
+```{R}
+tmp=finalutr%>%filter(CPSposIndex==1)
+tmp
+tmp.mn=tmp%>%filter(strand=="-")%>%mutate(end=start+151)%>%select(chr,start,end,id,Gene,strand,distance1.2,distance.stopcodon)
+tmp.pl=tmp%>%filter(strand=="+")%>%mutate(start=end-151)%>%select(chr,start,end,id,Gene,strand,distance1.2,distance.stopcodon)
+tmp.final.upstream=rbind(tmp.mn,tmp.pl)
+write.table(tmp.final.upstream,"pPAS.upstream150ntinterval.bed",col.names = F,row.names = F,sep = "\t",quote = F)
+
+tmp.final.upstream%>%filter(distance1.2>0)
+```
+
+#Save proximal PAS DOWNstream 150 nt into a bed file
+
+```{R}
+tmp=finalutr%>%filter(CPSposIndex==1)
+tmp
+tmp.mn=tmp%>%filter(strand=="-")%>%mutate(end=start)%>%mutate(start=end-151)%>%select(chr,start,end,id,Gene,strand,distance1.2,distance.stopcodon)
+tmp.pl=tmp%>%filter(strand=="+")%>%mutate(start=end)%>%mutate(end=start+151)%>%select(chr,start,end,id,Gene,strand,distance1.2,distance.stopcodon)
+tmp.final.dnstream=rbind(tmp.mn,tmp.pl)
+tmp.final.dnstream%>%filter(strand=="+")
+write.table(tmp.final.dnstream,"pPAS.dnstream150ntinterval.bed",col.names = F,row.names = F,sep = "\t",quote = F)
+
+```
+
+#join the gRNA table to the UTR info table.
+##canonical PAS signal reference
+###Genome Res. 2000 Jul; 10(7): 1001–1010.  doi: 10.1101/gr.10.7.1001
+```{r}
+dat=read.table("hg19.3UTR.tandemPAS2.blockcount1.txt",header=T, stringsAsFactors = F)
+head(dat)
+dat.proximal=dat%>%filter(CPSposIndex==1)
+nrow(dat.proximal)
+head(dat.proximal)
+```
+```{R}
+PASsignal=read.csv("../REsite/output.PASpos.upstream150interval.txt",header=T, stringsAsFactors = F,sep="\t")
+PASsignal=PASsignal%>%gather("PAS.signal","position",-id)%>%mutate(position=substr(position,2,nchar(position)-1))%>%mutate(position=ifelse(position=="",NA,position))%>%spread(PAS.signal,position)
+PASsignal2=PASsignal%>%gather("PAS.signal","position",-id)%>%group_by(id)%>%summarise(count.PASsignal=sum(!is.na(position)))%>%
+  ungroup()%>%
+  inner_join(PASsignal,by="id")
+head(PASsignal2)
+PASsignal2=PASsignal2%>%separate(id,c("id2","interval"),sep="::",remove = F)
+```
+
+```{R}
+library(tidyr)
+PASsignal3=PASsignal2%>%select(-id,-interval)%>%gather("PAS6mer","pos",-id2,-count.PASsignal)%>%separate_rows(pos,convert=T)%>%group_by(id2)%>%summarise(signal=any(pos>=100,na.rm=T))%>%ungroup()
+PASsignal3%>%filter(signal==TRUE)%>%nrow()
+PAS.indexid=PASsignal3%>%filter(signal==TRUE)%>%select(id2)%>%unlist()
+  #%>%filter(id2=="ENST00000233969_chr2:103327118")
+PASsignal2%>%select(-id,-interval)%>%gather("PAS6mer","pos",-id2,-count.PASsignal)%>%separate_rows(pos,convert=T)%>%group_by(id2)%>%filter(pos>=100)
+```
+
+
+```{R}
+dat.prx.tmp=dat.proximal%>%rename("id2"=id)%>%inner_join(PASsignal2,by="id2")
+head(dat.prx.tmp)
+```
+
+#upstream gRNA design
+REsites.output.gRNA.upstream150interval.txt
+```{r}
+upgRNA=read.csv("../REsite/REsites.output.gRNA.upstream150interval.txt",header=T, stringsAsFactors = F,sep="\t")
+upgRNA=upgRNA%>%mutate(region="upstream")
+dngRNA=read.csv("../REsite/REsites.output.gRNA.dnstream150interval.txt",header=T, stringsAsFactors = F,sep="\t")
+dngRNA=dngRNA%>%mutate(region="dnstream")
+
+gRNA.all=rbind(upgRNA,dngRNA)
+nrow(gRNA.all)
+head(gRNA.all)
+
+##upgRNA distance from stopcodon
+gRNAindex.tmp=gRNA.all%>%separate(contig,c("id2","interval"),sep="::")%>%filter(region=="upstream")%>%inner_join(dat.proximal%>%rename("id2"=id),by="id2")
+#gRNA vs Stopcodon distance>50
+gRNAindex=gRNAindex.tmp%>%mutate(distance.gRNA.stopcodon=ifelse(strand=="+",distance.stopcodon-(150-start.x),distance.stopcodon-stop))%>%select(id2,target,distance.gRNA.stopcodon)%>%arrange(id2)%>%unite("newid",c(id2,target),sep="_")%>%filter(distance.gRNA.stopcodon>=50)%>%select(newid)%>%unlist()
+head(gRNAindex2)
+
+#gRNA vs PAS signal distance>50
+gRNAindex2=gRNAindex.tmp%>%mutate(distance.gRNA.PASsignal=ifelse(strand=="+",(150-stop),start.x))%>%select(id2,target,distance.gRNA.PASsignal)%>%arrange(id2)%>%unite("newid",c(id2,target),sep="_")%>%filter(distance.gRNA.PASsignal>=50)%>%select(newid)%>%unlist()
+
+```
+
+##integrate PAS signal, 3UTR info, gRNA info
+```{R}
+
+dat.prx.final=dat.prx.tmp%>%inner_join(gRNA.all%>%separate(contig,c("id2","interval"),sep="::"),by="id2")%>%rename("gRNA.start"=start.y,"gRNA.stop"=stop)
+nrow(dat.prx.final) #66861
+colnames(dat.prx.final)
+head(dat.prx.final)
+```
+
+##filtering
+0. protein coding genes with two distinct PAS in a last 3'UTR exon (3'UTR composed of single exon).
+1. distance (pPAS -stop codon >150 nt) #3071
+2. pPAS should have conserved PAS signal upstream (-50 nt -0 nt) #2553
+3. distance proximal PAS - distal PAS >=300 #2007
+4. stopcodon-upsteam gRNA distance>=50 #
+5. gRNA position upstream of pPAS PAS signal
+6. gRNA poly(T) in down and upstream gRNAs X
+7. gRNA restriction enzyme cut site in down and upstream gRNAs (x)
+
+```{R}
+dat.prx.final%>%summarise(n_distinct(id2)) #3071
+dat.prx.final%>%filter(id2 %in% PAS.indexid)%>%summarise(n_distinct(id2))#2553
+
+dat.prx.final%>%filter(id2 %in% PAS.indexid)%>%
+  filter(distance1.2>=300)%>%
+  summarise(n_distinct(id2)) #2007
+
+
+#gRNA
+dat.prx.final%>%filter(id2 %in% PAS.indexid)%>%
+  filter(distance1.2>=300)%>%group_by(count.PASsignal)%>%summarise(n_distinct(id2))
+nrow(dat.prx.final%>%filter(id2 %in% PAS.indexid)%>%
+  filter(distance1.2>=300))
+
+dn=dat.prx.final%>%filter(id2 %in% PAS.indexid)%>%
+  filter(distance1.2>=300)%>%
+  unite("newid",c(id2,target),sep="_",remove=F)%>%filter(region=="dnstream")
+#up=dat.prx.final%>%filter(id2 %in% PAS.indexid)%>%filter(distance1.2>=300)%>% unite("newid",c(id2,target),sep="_",remove=F)%>%filter(region=="upstream")
+
+up=dat.prx.final%>%filter(id2 %in% PAS.indexid)%>%
+  filter(distance1.2>=300)%>%
+  unite("newid",c(id2,target),sep="_",remove=F)%>%filter(region=="upstream")%>%filter(newid %in% gRNAindex)
+dat.prx.final2=rbind(dn,up)
+nrow(dat.prx.final)
+nrow(dn);nrow(up)
+nrow(dn);nrow(up)
+dn%>%mutate(sum.RE=BsmBI+NdeI+MluI)%>%filter(sum.RE==0)%>%filter(dangerous_polyT!="PolyT")%>%nrow()
+dat.prx.final2%>%group_by(id2,region)%>%summarise(n.gRNA=n_distinct(target))%>%ungroup()%>%spread(region,n.gRNA)%>%filter(dnstream>4&upstream>4)#gRNA startpoint from stopcodon>50 #1984
+dat.prx.final2%>%filter(id2=="ENST00000159111_chr19:5151901")
+```
+
+
+```{R}
+
+
+up=dat.prx.final%>%filter(id2 %in% PAS.indexid)%>%
+  filter(distance1.2>=300)%>%
+  unite("newid",c(id2,target),sep="_",remove=F)%>%filter(region=="upstream")%>%filter(newid %in% gRNAindex)%>%filter(newid %in% gRNAindex2)
+nrow(up)
+up%>%mutate(sum.RE=BsmBI+NdeI+MluI)%>%filter(sum.RE==0)%>%
+  filter(dangerous_polyT!="PolyT")%>%
+  nrow()
+dat.prx.final2=rbind(dn,up)
+
+
+
+
+```
+
+
+```{R}
+
+
+#restriction enzyme sites
+dat.prx.final2%>%mutate(sum.RE=BsmBI+NdeI+MluI)%>%filter(sum.RE==0)%>%
+  filter(dangerous_polyT!="PolyT")%>%
+  group_by(id2,region)%>%summarise(n.gRNA=n_distinct(target))%>%ungroup()%>%spread(region,n.gRNA)%>%filter(dnstream>0&upstream>0) #1944
+
+dat.prx.final2%>%
+  filter(dangerous_polyT!="PolyT")%>%
+  mutate(sum.RE=BsmBI+NdeI+MluI)%>%filter(sum.RE==0)%>%group_by(id2,region)%>%summarise(n.gRNA=n_distinct(target))%>%ungroup()%>%spread(region,n.gRNA)%>%filter(dnstream>4&upstream>4) #1942   #gRNA >=5 :1104 ROWS;gRNA >=3 :1575 ROWS
+
+
+head(a375.expressed)
+dat.prx.final2%>%
+  filter(dangerous_polyT!="PolyT")%>%
+  mutate(sum.RE=BsmBI+NdeI+MluI)%>%filter(sum.RE==0)%>%
+  group_by(id2,region)%>%summarise(n.gRNA=n_distinct(target))%>%ungroup()%>%spread(region,n.gRNA)%>%
+  filter(dnstream>=1&upstream>=1& dnstream*upstream>=5)%>%#1943
+  #filter(dnstream>4&upstream>4)%>%
+  separate(id2,c("hg19.ENST","CPSpos"),sep="_")%>%filter(hg19.ENST %in%a375.expressed)
+1575-1214
+
+
+finalid2=dat.prx.final2 %>%filter(dangerous_polyT!="PolyT")%>%
+  mutate(sum.RE=BsmBI+NdeI+MluI)%>%filter(sum.RE==0)%>%group_by(id2,region)%>%summarise(n.gRNA=n_distinct(target))%>%ungroup()%>%spread(region,n.gRNA)%>%filter(dnstream>=1&upstream>=1& dnstream*upstream>=5)%>%separate(id2,c("hg19.ENST","CPSpos"),sep="_",remove = F)%>%filter(hg19.ENST %in%a375.expressed)#1943
+
+final_gRNA_set=dat.prx.final2%>%filter(id2 %in% c(finalid2$id2))
+
+
+dis=read.table("PAS.distance.ratio.n2.txt",header=T,stringsAsFactors = F) #include miRNA, linc, protein coding
+dis%>%filter(hg19.ENST=="ENST00000263741")
+dis=dis%>%select(hg19.ENST,pos,distance1.2)%>%arrange(hg19.ENST)%>%distinct
+final.list=final_gRNA_set%>%select(-newid,-id,-CPSposIndex,-interval.x,-interval.y)%>%mutate(stopcodon=ifelse(strand=="+",start.x,end))%>%select(-start.x,-end)
+final.list=final.list%>%separate(id2,c("hg19.ENST","CPSpos"),sep="_")%>%select(-CPSpos)%>%inner_join(dis%>%select(-distance1.2),by="hg19.ENST")%>%arrange(Gene,hg19.ENST,region,-Hsu2013,-Doench2014OnTarget)
+colnames(final.list)
+final.list%>%summarise(n_distinct(hg19.ENST))
+write.table(final.list%>%select(  "Gene"   ,  "hg19.ENST"   ,               "chr",           "pos"     ,          "strand" ,    "blockcount" ,               "stopcodon" ,          "distance.stopcodon"  ,                                     "distance1.2",                    "region"    ,           "target" ,                    "context"  , "overflow"     ,              "orientation"   ,             "Doench2014OnTarget" ,        "DoenchCFD_maxOT"  ,          "DoenchCFD_specificityscore",  "Hsu2013"  ,      
+"dangerous_GC"      ,         "dangerous_polyT"   ,         "dangerous_in_genome"   ,               "basesDiffToClosestHit" ,    
+"closestHitCount"  ,          "X0.1.2.3.4_mismatch"   ,     "otCount"                    ),"20210811.finalcandidate.PAS.n2.txt",sep="\t",col.names = T,row.names = F,quote = F)
+
+```
+
+```{R}
+fin.bin
+t=fin.bin%>%select(gene.x,id,hg19.ENST,pos.x,n,coding,RPKM,distance1.2,bin,candidate)%>%inner_join(final%>%select(strand,distance.stopcodon,id),by="id")
+t 
+t%>%ungroup()%>%filter(bin %in% c("300-1000","1000-3000",">3000"))%>%filter(RPKM<=1)%>%summarise(n_distinct(hg19.ENST))
+t%>%ungroup()%>%filter(bin %in% c("300-1000","1000-3000",">3000"))%>%filter(RPKM>1)%>%summarise(n_distinct(hg19.ENST))
+
+t=fin.bin%>%select(gene,hg19.ENST,pos.x,n,coding,rc.a375,distance1.2,bin,candidate)%>%inner_join(final.tmp%>%select(hg19.ENST,strand,distance.stopcodon)%>%distinct())
+write.table(t,"final.list.of.genes for screening.txt",col.names = T,row.names = F,sep="\t",quote = F)
+t%>%ungroup()%>%filter(bin %in% c("300-1000","1000-3000",">3000"))%>%filter(rc.a375>5)%>%filter(gene=="CDK13")
+
+
+```

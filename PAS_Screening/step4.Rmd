@@ -1,0 +1,420 @@
+---
+title: "step4:differential APA tissue by tissue across all tissues"
+author: "Yeonui+Kwak"
+date: "7/22/2021"
+output: html_document
+---
+```{r}
+getwd()
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+
+library(gridExtra)
+#source("scatterPlot.R")
+```
+
+Load data
+
+```{R}
+dat=read.table("n2.genes.readcount.acrosstissues.txt",header=T,stringsAsFactors = F)
+#dat=dat%>%mutate(mean.bcell=(bcells.1+bcells.2)/2)
+dat.long=dat%>%gather(-chr,-start,-coding,-end,-id,-sumrc,-strand,-gene,-hg19.ENST,-CPSpos,-CPSposIndex,-pos,-n,key="tissue",value="rc")
+geneid=dat%>%select(hg19.ENST,gene)%>%distinct_at(vars(hg19.ENST,gene))
+(dat)
+#4253genes
+```
+
+
+
+
+
+
+compare PAS usage betweem two tissues
+```{r}
+diffCPS.test = function(ti, cn, rc) {
+	cont.t = data.frame(tissue = ti, cpsNo = cn, readCount = rc) %>%
+		spread(cpsNo, readCount)
+	return(fisher.test(cont.t[, -1])$p.value)}
+
+```
+
+
+```{R}
+sample2=c(
+"hES",
+"ntera",
+"hek293",
+"bcells.1",
+"bcells.2",
+"blcl",
+"brain",
+"ovary",
+"skmuscle",
+"testis",
+"breast",
+"mcf10a.1",
+"mcf10a.2",
+"mcf10a.hras.1",
+"mcf10a.hras.2",
+"mcf7",
+"hela"
+
+)
+
+
+s=factor(sample2,levels = c(
+"hES",
+"ntera",
+"hek293",
+"bcells.1",
+"bcells.2",
+"blcl",
+"brain",
+"ovary",
+"skmuscle",
+"testis",
+"breast",
+"mcf10a.1",
+"mcf10a.2",
+"mcf10a.hras.1",
+"mcf10a.hras.2",
+"mcf7",
+"hela"
+
+))
+cmb.tmp=combn(sort(s),2)
+cmb.tmp
+```
+
+```{R}
+
+
+
+tmp=dat.long%>%mutate(rc=as.numeric(rc))%>%
+  group_by(tissue,gene,hg19.ENST)%>%
+  separate(CPSpos,c("chr","coordinate"),sep=":",remove=F)%>%mutate(coordinate=as.numeric(coordinate))%>%
+  mutate(distance1.2=abs(coordinate[1]-coordinate[2]))%>%ungroup()%>%
+  select(gene,hg19.ENST,CPSposIndex,pos,n,tissue,rc,distance1.2,coding)%>%spread(CPSposIndex,rc)%>%arrange(-`1`)
+tmp2=tmp%>%filter(`1`>0,`2`>0)%>%mutate("log2(D/P)"=log2(`2`/`1`))
+
+(tmp2)%>%summarise(n_distinct(hg19.ENST))
+```
+
+```{R}
+RED.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%
+    filter(tissue %in% comb)%>%
+    select(hg19.ENST,`log2(D/P)`,tissue,distance1.2)%>%
+    spread(tissue,`log2(D/P)`)%>%na.omit()
+#as string
+  library(rlang)
+  var1=as.character(comb[2])
+  var2=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(RED.stat=.data[[var1]]-.data[[var2]])%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,distance1.2,RED.stat,comparison,.data[[var1]],.data[[var2]])
+  RED.list[[x]]=sp.tmp
+}
+str(RED.list)
+df.RED=reduce(RED.list,rbind)
+df.RED=df.RED%>%unite("id",c(hg19.ENST,comparison),sep=":")
+
+#ratio pf pPAS
+pPAS.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%filter(tissue %in% comb)%>%
+    select(hg19.ENST,`1`,tissue,distance1.2)%>%
+    spread(tissue,`1`)%>%na.omit()
+sp.tmp
+  #as string
+  library(rlang)
+  var2=as.character(comb[2])
+  var1=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(pPAS.ratio=.data[[var2]]/.data[[var1]])%>%ungroup()%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,pPAS.ratio,comparison)
+  pPAS.list[[x]]=sp.tmp
+}
+df.pPAS=reduce(pPAS.list,rbind)
+df.pPAS=df.pPAS%>%unite("id",c(hg19.ENST,comparison),sep=":")
+df.pPAS
+
+#dPAS ratio
+
+#ratio pf pPAS
+dPAS.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  sp.tmp=tmp2%>%ungroup()%>%filter(tissue %in% comb)%>%
+    select(hg19.ENST,`2`,tissue,distance1.2)%>%
+    spread(tissue,`2`)%>%na.omit()
+sp.tmp
+  #as string
+  library(rlang)
+  var2=as.character(comb[2])
+  var1=as.character(comb[1])
+  sp.tmp=sp.tmp%>%group_by(hg19.ENST)%>%
+    mutate(dPAS.ratio=.data[[var2]]/.data[[var1]])%>%ungroup()%>%
+
+    mutate(comparison=id)%>%select(hg19.ENST,dPAS.ratio,comparison)
+  dPAS.list[[x]]=sp.tmp
+}
+df.dPAS=reduce(dPAS.list,rbind)
+df.dPAS=df.dPAS%>%unite("id",c(hg19.ENST,comparison),sep=":")
+df.dPAS
+
+```
+
+```{R}
+pval.list=list()
+for (x in 1:ncol(cmb.tmp)){
+  comb=cmb.tmp[,x]
+  id=paste0(comb,collapse = " vs ")
+  df=dat.long%>%ungroup()%>%
+    filter(tissue %in% comb)%>%
+    group_by(gene,hg19.ENST)%>%
+    mutate(sum.rc=sum(rc))%>%ungroup()%>%
+    filter(sum.rc>5)%>%
+    group_by(gene,hg19.ENST)%>%
+    summarise(pval= diffCPS.test(ti=tissue,cn=CPSposIndex,rc=rc))%>%ungroup()
+  pval.list[[id]]=df%>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))%>%
+  mutate(comparison=rep(id))
+}
+
+#str(pval.list)
+df.pval=reduce(pval.list,rbind)
+
+df.final=df.pval%>%ungroup()%>%
+  unite("id",c(hg19.ENST,comparison),sep=":",remove=F)%>%inner_join(df.RED%>%ungroup(),by="id")%>%inner_join(df.pPAS%>%ungroup(),by="id")%>%inner_join(df.dPAS%>%ungroup(),by="id")%>%mutate(group=ifelse(RED.stat>log2(1.2)&fdr<0.01,"to Distal",ifelse(RED.stat<log2(1/1.2)&fdr<0.01,"to Proximal","No change")))%>%
+  mutate(group=factor(group,levels=c("to Proximal","No change","to Distal")))
+nrow(df.final)
+#df.final=df.final%>%select(id,hg19.ENST,comparison,pval,fdr,RED.stat,distance1.2,bcells.1,bcells.2,blcl)
+summary(df.final)
+write.table(df.final,"alltissuebytissue.comparison.APAchange.txt",col.names = T,row.names = F,sep="\t",quote = F)
+```
+
+
+#scatter plot
+```{R}
+test=df.final%>%
+  filter(comparison=="hES vs testis")%>%
+  mutate(group=ifelse(RED.stat>log2(1.2)&fdr<0.01,"to Distal",ifelse(RED.stat<log2(1/1.2)&fdr<0.01,"to Proximal","No change")))%>%
+  mutate(group=factor(group,levels=c("to Proximal","No change","to Distal")))
+test%>%group_by(group)%>%summarise(n())
+pdf("scatterplot.hESvstestis.pdf",height=3,width=4)
+ggplot(test,aes(x=log2(pPAS.ratio),y=log2(dPAS.ratio),col=group, alpha=ifelse(group =="No change", 0.3, 0.9)))+
+  ggtitle("hESvs testis\nDifferentiation")+
+    geom_point(size=0.5)+scale_colour_manual(values = yk.col(3))+theme_bw()+ylab("Log2 dPAS ratio")+xlab("Log2 pPAS ratio")+ scale_alpha(guide = 'none')
+dev.off()
+```
+option1
+```{r}
+install.packages("devtools")
+library(devtools)
+install_github("jokergoo/ComplexHeatmap")
+#(ComplexHeatmap)
+#library(dendextend)
+library("cluster")
+set.seed(2)
+df.final
+#genes expressed in all tissues.
+hm.input2=read.table("n2.PAS.protein.coding.genes.ratio.across.tissues.txt",header=T,stringsAsFactors = F)
+tmp=hm.input2%>%select(hg19.ENST,gene)%>%
+  inner_join(df.final%>%select(-gene),by="hg19.ENST")
+
+write.table(tmp%>%group_by(comparison,group)%>%summarise(genes=n()),"summaryofAPA.tissuebytissue.all tissues.txt",sep="\t",col.names = T,row.names = F,quote=F)
+tmp%>%group_by(comparison)%>%summarise(n())
+dat.bar=tmp%>%group_by(comparison,group)%>%summarise(genes=n())
+dat.bar%>%group_by(comparison)%>%summarise(sum(genes))
+```
+option2
+```{R}
+df.final.select=df.final%>%group_by(hg19.ENST)%>%summarise(n=n_distinct(comparison))%>%arrange(-n)%>%filter(n==136)%>%ungroup()%>%inner_join(df.final,by="hg19.ENST")
+tmp.select=hm.input2%>%select(hg19.ENST,gene)%>%
+  inner_join(df.final.select%>%select(-gene),by="hg19.ENST")
+tmp.select%>%distinct(hg19.ENST)#1207
+dat.bar=tmp.select%>%group_by(comparison,group)%>%summarise(genes=n())
+
+
+```
+scattor plot
+```{R}
+pdf("apachage.acrossalltissuecomparison.pdf",width=100,height=3)
+ggplot(dat.bar,aes(x=comparison,y=genes,fill=group))+geom_bar(stat="identity",position="dodge")+theme_bw()+scale_fill_manual(values=yk.col(5)[c(2:4)])+
+  theme(axis.text.x = element_text(angle = 45,hjust=1))
+dev.off()
+
+
+pdf("apachage.acrossalltissuecomparison_wraped.pdf",width=12,height=40)
+ggplot(dat.bar,aes(x=group,y=genes,fill=group,group=comparison))+geom_bar(stat="identity",position="dodge")+theme_bw()+scale_fill_manual(values=yk.col(5)[c(2:4)])+
+  theme(axis.text.x = element_text(angle = 45,hjust=1))+facet_wrap(.~comparison,ncol=5,scales = "free_y")
+dev.off()
+```
+```{r}
+install_github("jokergoo/ComplexHeatmap")
+Yedevtools::session_info()
+```
+
+
+heatmap
+```{r}
+dat.bar.mat=dat.bar%>%spread(group,genes)%>%filter(grepl("hES",comparison))
+dat.bar.mat
+dat.bar.mat.tmp=as.matrix(dat.bar.mat[,-c(1,3)])
+rownames(dat.bar.mat.tmp)=dat.bar.mat$comparison
+rows.cor <- cor(t(dat.bar.mat.tmp), use = "pairwise.complete.obs", method = "pearson")
+hclust.row <- hclust(as.dist(1-rows.cor),method="complete")
+dat.bar.mat$pearsoncluster=cutree(hclust.row, k=2)
+#tmp=tmp%>%mutate(perasoncluster2=ifelse((testis<0.5&hES<0.5)|(testis>0.5&hES>0.5),"mild","drastic"))
+#tmp=tmp%>%unite("cl",c("perasoncluster" ,"perasoncluster2"),sep=":")
+dat.bar.mat%>%group_by(pearsoncluster)%>%summarise(n())
+
+pdf("heatmap.comparedtohES only.pdf",width=5,height=4)
+t=1:2
+names(t)=unique(dat.bar.mat$pearsoncluster)
+Heatmap(dat.bar.mat.tmp,name = "genes", na_col = "grey",
+        show_row_names = T,cluster_columns = T,show_column_names = TRUE,  col= circlize::colorRamp2(seq(1,250,10), yk.col(25)),split = dat.bar.mat$pearsoncluster,right_annotation =row_ha)#+row_ha=rowAnnotation(APAswitch=(dat.bar.mat$pearsoncluster), col=list(APAswitch=t))
+row_ha=rowAnnotation(APAswitch=anno_simple(as.factor(dat.bar.mat$pearsoncluster)))
+
+dev.off()
+```
+
+```{R}
+dat.bar.mat=dat.bar%>%spread(group,genes)
+dat.bar.mat
+dat.bar.mat.tmp=as.matrix(dat.bar.mat[,-c(1,3)])
+rownames(dat.bar.mat.tmp)=dat.bar.mat$comparison
+rows.cor <- cor(t(dat.bar.mat.tmp), use = "pairwise.complete.obs", method = "pearson")
+hclust.row <- hclust(as.dist(1-rows.cor),method="complete")
+dat.bar.mat$pearsoncluster=cutree(hclust.row, k=2)
+#tmp=tmp%>%mutate(perasoncluster2=ifelse((testis<0.5&hES<0.5)|(testis>0.5&hES>0.5),"mild","drastic"))
+#tmp=tmp%>%unite("cl",c("perasoncluster" ,"perasoncluster2"),sep=":")
+dat.bar.mat%>%group_by(pearsoncluster)%>%summarise(n())
+
+pdf("heatmap.all.pdf",width=6,height=30)
+t=1:2
+names(t)=unique(dat.bar.mat$pearsoncluster)
+Heatmap(dat.bar.mat.tmp,name = "genes", na_col = "grey",
+        show_row_names = T,cluster_columns = T,show_column_names = TRUE,  col= circlize::colorRamp2(seq(1,300,10), yk.col(30)),split = dat.bar.mat$pearsoncluster,row)+rowAnnotation(APAswitch=(dat.bar.mat$pearsoncluster), col=list(APAswitch=t))
+dev.off()
+
+pdf("heatmap.al2l.pdf",width=3,height=10)
+t=1:2
+names(t)=unique(dat.bar.mat$pearsoncluster)
+Heatmap(dat.bar.mat.tmp,name = "genes", na_col = "grey",
+        show_row_names = F,cluster_columns = T,show_column_names = TRUE,  col= circlize::colorRamp2(seq(1,300,10), yk.col(30)),split = dat.bar.mat$pearsoncluster,row)+rowAnnotation(APAswitch=(dat.bar.mat$pearsoncluster), col=list(APAswitch=t))
+dev.off()
+
+```
+
+SCALED
+```{R}
+
+pdf("apachage.acrossalltissuecomparison_heatmap2.pdf",width=4,height=10)
+mat=(scale((dat.bar.mat.tmp)))
+str(mat)
+rows.cor <- cor(t(mat), use = "pairwise.complete.obs", method = "pearson")
+hclust.row <- hclust(as.dist(1-rows.cor),method="complete")
+dat.bar.mat$pearsoncluster=cutree(hclust.row, k=2)
+f1 = colorRamp2(seq(min(mat), max(mat), length = 3), c("blue", "#EEEEEE", "red"))
+Heatmap(mat,name = "pPAS usage (Proximal/ALL)", na_col = "grey",
+        show_row_names = F,cluster_columns = T,show_column_names = TRUE, 
+        col = f1,
+        split = dat.bar.mat$pearsoncluster,row)+rowAnnotation(APAswitch=(dat.bar.mat$pearsoncluster), col=list(APAswitch=t))
+dev.off()
+dat.bar.mat%>%filter(comparison=="hES vs testis")
+dat.bar.mat
+```
+
+
+4 criteria defining the APA chaged genes.
+```{R}
+#method2
+hm.input2=read.table("n2.PAS.protein.coding.genes.ratio.across.tissues.txt",header=T,stringsAsFactors = F)
+head(df.final)
+df.final2=df.final%>%select(hg19.ENST,group,comparison)%>%spread(comparison, group)
+
+tmp=hm.input2%>%inner_join(df.final2,by="hg19.ENST")
+head(tmp)
+cmb.tmp=unique(df.final$comparison)
+summary.list=list()
+gene.list=list()
+for (x in 1:length(cmb.tmp)){
+  comb=str_split(cmb.tmp[x], " vs ")%>%unlist()
+  id=cmb.tmp[x]
+  dat.tmp=tmp%>%filter(!is.na(.data[[id]]))
+  dat.tmp2=dat.tmp[,c("gene","hg19.ENST",comb,id)]
+  dat.tmp2=dat.tmp2%>%mutate(pearsoncluster2=ifelse((.data[[comb[1]]]<0.5&.data[[comb[2]]]<0.5)|(.data[[comb[1]]]>0.5&.data[[comb[2]]]>0.5),"mild","drastic"))
+  summary.list[[x]]=dat.tmp2%>%group_by(.data[[id]],pearsoncluster2)%>%summarise(n=n())%>%ungroup()%>%spread(.data[[id]],n)%>%mutate(comparison=id)
+  gene.list[[x]]=dat.tmp2%>%mutate("comparison"=id)%>%rename("APA.direction"=.data[[id]])%>%rename("APA.degree"=pearsoncluster2)%>%rename(tissue1=.data[[comb[1]]],tissue2=.data[[comb[2]]])
+  
+}
+df.gene=reduce(gene.list,rbind)
+
+df.summary=reduce(summary.list,rbind)
+df.summary%>%filter(comparison=="mcf10a.2 vs mcf10a.hras.1")
+write.table(df.gene,"summary.across.tissue.APA.gene.criteriaassigned.txt",sep="\t",quote=F,col.names = T,row.names = F)
+write.table(df.summary,"summary.across.tissue.APA.number.txt",sep="\t",quote=F,col.names = T,row.names = F)
+df.summary2=df.summary%>%gather(-pearsoncluster2,-comparison,key="APA.direction",value="gene")
+df.summary3=df.summary2%>%filter(grepl("hES",comparison))%>%filter(APA.direction!="No change")
+write.table(df.summary3%>%unite("f",c(pearsoncluster2,APA.direction),sep=":")%>%spread(f,gene),"ppt.table.summary.txt",quote=F,col.names = T,row.names = F,sep="\t")
+pdf("summary.bar.plot.APA.comparedtohES.pdf",width=8,height=6)
+ggplot(df.summary3,aes(APA.direction,gene,fill=pearsoncluster2))+geom_bar(stat="identity",position="dodge")+facet_wrap(.~comparison)+theme_bw()+scale_fill_manual(name="APA shift degree",values =yk.col(5)[c(2,5)])
+dev.off()
+```
+
+
+
+
+```{R}
+df.gene=read.csv("summary.across.tissue.APA.gene.criteriaassigned.txt",header=T,stringsAsFactors = F,sep="\t")
+df.gene
+test=df.gene%>%filter(APA.direction!="No change")%>%filter(comparison=="hES vs testis")
+write.table(test,"hESvstestis.AlteredPASusage.txt",sep="\t",col.names = T,row.names = F,quote=F)
+HM3=test[,c(3,4)]
+#tmp=tmp%>%mutate(pearsoncluster2=ifelse((testis<0.5&hES<0.5)|(testis>0.5&hES>0.5),"mild","drastic"))
+test=test%>%unite("cl",c("APA.direction" ,"APA.degree"),sep=":")
+unique(test$cl)
+
+
+test=test%>%mutate(cl=factor(cl,levels=c("to Proximal:drastic","to Proximal:mild","to Distal:drastic" ,"to Distal:mild")))
+test%>%group_by(cl)%>%summarise(n())
+
+pdf("n2.differential APAacrosstissuesp0.01_detailed2.hES.testis2.pdf",width=4,height=4)
+t=1:4
+names(t)=unique(test$cl)
+Heatmap(HM3, name = "pPAS usage (Proximal/ALL)", na_col = "grey",
+        show_row_names = F,cluster_columns = T,show_column_names = TRUE,  col= circlize::colorRamp2(seq(0,1,0.1), yk.col(11)),split = test$cl,)+rowAnnotation(APAswitch= (test$cl),col=list(APAswitch=c(t)))
+col=colorRamp2(c(1, 3, 6), c("blue", "white", "red"))
+
+dev.off()
+
+
+```
+
+
+

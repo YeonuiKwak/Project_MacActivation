@@ -1,0 +1,152 @@
+---
+title: "Step2_identify tissue specific tandem 3’UTR isoform:heatmap"
+author: "Yeonui+Kwak"
+date: "7/20/2021"
+output: html_document
+---
+
+```{R}
+dat<-read.table("PAS.distance.ratio.n2.txt",header=T,stringsAsFactors = F)
+
+
+head(dat)
+```
+
+
+```{R}
+dat=dat%>%select(-X2)%>%spread(tissue,X1)
+dat=dat%>%na.omit()
+nrow(dat)
+dat2=dat%>%mutate(bcells=(`bcells-1`+`bcells-2`)/2,mcf10a=(`mcf10a-1`+`mcf10a-2`)/2,mcf10ahras=(`mcf10a.hras-2`+`mcf10a.hras-1`)/2)%>%select(-`bcells-1`,-`bcells-2`,-`mcf10a-1`,-`mcf10a-2`,-`mcf10a.hras-2`,-`mcf10a.hras-1`)
+dat2
+```
+#No protein-coding
+```{R}
+
+dat.tmp=dat%>%filter(coding=="protein_coding")
+ncol(dat.tmp)
+head(dat.tmp)
+tmp=c()
+for (i in 1:nrow(dat.tmp)){
+  empty=c()
+  for (j in 1:17){
+  x=dat.tmp[i,7:ncol(dat.tmp)]%>%unlist()
+  t=wilcox.test(x[j],x[-j])
+  empty=c(empty,t$p.value)}
+  tmp=rbind(tmp,empty)
+}
+tmp
+tmp=as.tibble(tmp)%>%mutate(gene=dat.tmp$gene)
+as.tibble(tmp)%>%filter_all(any_vars(.<0.05))
+
+#p.adjust(empty,method="fdr")
+
+```
+Protein coding
+```{R}
+dat.tmp=dat2%>%filter(coding!="protein_coding")
+ncol(dat.tmp)
+head(dat.tmp)
+tmp=c()
+for (i in 1:nrow(dat.tmp)){
+  empty=c()
+  for (j in 1:14){
+  x=dat.tmp[i,7:ncol(dat.tmp)]%>%unlist()
+  t=wilcox.test(x[j],x[-j])
+  empty=c(empty,t$p.value)}
+  tmp=rbind(tmp,empty)
+}
+tmp
+tmp=as.tibble(tmp)%>%mutate(gene=dat.tmp$gene)
+as.tibble(tmp)%>%filter_all(any_vars(.<0.2))
+
+
+```
+
+
+
+CANCER VS NON-CANCER
+LCL b-CELL
+```{R}
+head(dat)
+dat.tmp=dat%>%select(coding,`bcells-1`,`bcells-2`,blcl)%>%filter(coding!="protein_coding")
+ncol(dat.tmp)
+head(dat.tmp)
+tmp=c()
+for (i in 1:nrow(dat.tmp)){
+  empty=c()
+  x=dat.tmp[i,2:ncol(dat.tmp)]%>%unlist()
+  t=wilcox.test(x[c(1,2)],x[3])
+  empty=c(empty,t$p.value)
+  tmp=rbind(tmp,empty)
+}
+tmp
+tmp=as.tibble(tmp)%>%mutate(gene=dat.tmp$gene)
+as.tibble(tmp)%>%filter_all(any_vars(.<0.2))
+
+
+```
+Coding
+```{R}
+head(dat)
+dat.tmp=dat%>%select(coding,`bcells-1`,`bcells-2`,blcl)%>%filter(coding=="protein_coding")
+ncol(dat.tmp)
+head(dat.tmp)
+tmp=c()
+for (i in 1:nrow(dat.tmp)){
+  empty=c()
+  x=dat.tmp[i,2:ncol(dat.tmp)]%>%unlist()
+  t=wilcox.test(x[c(1,2)],x[3])
+  empty=c(empty,t$p.value)
+  tmp=rbind(tmp,empty)
+}
+tmp
+tmp=as.tibble(tmp)%>%mutate(gene=dat.tmp$gene)
+as.tibble(tmp)%>%filter_all(any_vars(.<0.3))
+
+
+```
+
+#mcf10a vs hras
+```{R}
+head(dat)
+dat.tmp=dat%>%select(gene,coding,`mcf10a-1`,`mcf10a-2`,`mcf10a.hras-1`,`mcf10a.hras-2`)%>%filter(coding!="protein_coding")
+ncol(dat.tmp)
+head(dat.tmp)
+tmp=c()
+for (i in 1:nrow(dat.tmp)){
+  empty=c()
+  x=dat.tmp[i,3:ncol(dat.tmp)]%>%unlist()
+  t=wilcox.test(x[c(1,2)],x[c(3,4)])
+  empty=c(empty,t$p.value)
+  tmp=rbind(tmp,empty)
+}
+tmp
+tmp=as.tibble(tmp)%>%mutate(gene=dat.tmp$gene)
+as.tibble(tmp)%>%filter_all(any_vars(.<0.3))
+
+#LINC00909
+#RP11-90g19.3
+```
+Coding
+```{R}
+head(dat)
+dat.tmp=dat%>%select(gene,coding,`mcf10a-1`,`mcf10a-2`,`mcf10a.hras-1`,`mcf10a.hras-2`)%>%filter(coding=="protein_coding")
+ncol(dat.tmp)
+head(dat.tmp)
+tmp=c()
+for (i in 1:nrow(dat.tmp)){
+  empty=c()
+  x=dat.tmp[i,3:ncol(dat.tmp)]%>%unlist()
+  t=wilcox.test(x[c(1,2)],x[c(3,4)])
+  empty=c(empty,t$p.value)
+  tmp=rbind(tmp,empty)
+}
+tmp
+tmp=as.tibble(tmp)%>%mutate(gene=dat.tmp$gene)
+as.tibble(tmp)%>%filter_all(any_vars(.<0.2))
+
+#cep76
+dat%>%filter(gene=="CEP76")
+```
+
