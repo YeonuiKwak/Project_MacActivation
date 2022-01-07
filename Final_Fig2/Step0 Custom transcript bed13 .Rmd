@@ -1,0 +1,148 @@
+---
+title: "Custom Transcriptome bed file"
+author: "Yeonui+Kwak"
+date: "8/7/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig2/Rcode")
+```
+
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+CPS position
+```{R}
+cps.ref<-read.table("final.30980cps.in.3UTR.1kb.ext.txt",header=T,stringsAsFactors = F)
+head(cps.ref)
+#cps.ref=cps.ref%>%separate(V4,c("id","chr","CPSpos"),sep=":")
+#cps.ref=cps.ref%>%unite("CPSid",c(chr,CPSpos),sep=":",remove = F)
+
+```
+
+
+3.5. Edit transcripts.bed13 with the de novo PAS identified in my 3p-seq data.
+
+```{R}
+library(stringr)
+ref<-read.table("./Reference/transcripts.bed13",header = F,stringsAsFactors = F)
+
+cps.ref.bed=cps.ref%>%arrange(CPSid,(abs(relpos)),id)%>%
+  distinct_at(vars(hgnc,CPSid),.keep_all = T)
+head(ref)
+str(tmp)
+pl=tmp%>%filter(V6=="+")
+#strand+
+#Exmp=tmp%>%filter(V4=="ENST00000378536.4")
+#strand +
+Exmp=pl%>%unite(id,c(V4,V3,CPSid),sep=":",remove = F)%>%mutate(V4=id)%>%select(-CPSid,-id)%>%
+mutate(V3=CPSpos)%>%select(-CPSpos)
+
+
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  Newend=as.numeric(Exmp[i,3])
+  Txnstart=as.numeric(Exmp[i,2])
+  #if ( Newend >= (Txnstart+blockstarts[length(blockstarts)])){
+   # blocksizes[length(blockstarts)]=Newend-(Txnstart+(blockstarts[length(blockstarts)]))
+  #  Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  #}
+  #else {
+    x=1
+    while(x<=Exmp[i,10]& (Newend>=(Txnstart+blockstarts[x]))){
+      x=x+1
+    }
+    blockstarts=blockstarts[1:(x-1)]
+    blocksizes=blocksizes[1:(x-1)]
+    blocksizes[length(blockstarts)]=Newend-(Txnstart+blockstarts[length(blockstarts)])
+    Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+    Exmp[i,12]=str_replace_all(paste(blockstarts, ",",collapse =""), fixed(" "), "")
+    Exmp[i,10]=x-1
+  #}
+}
+pl.tmp=Exmp
+head(pl.tmp,100)
+```
+
+```{R}
+#strand -
+mn=tmp%>%filter(V6=="-")
+#Exmp=tmp%>%filter(V4=="ENST00000234875.8")
+#Exmp=tmp%>%filter(V4=="ENST00000347370.6")
+#Exmp=Exmp%>%unite(id,c(V4,V2,CPSid),sep=":",remove = F)%>%mutate(V4=id)%>%select(-CPSid,-id)
+Exmp=mn%>%unite(id,c(V4,V2,CPSid),sep=":",remove = F)%>%mutate(V4=id)%>%select(-CPSid,-id)
+str(Exmp)
+
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  Newstart=Exmp[i,14]
+  Txnstart=Exmp[i,2]
+  Exoncounts=Exmp[i,10]
+  #if ( Newstart <=(Txnstart+blocksizes[1])){
+   # blocksizes[1]=(Txnstart+blocksizes[1])-Newstart
+  #  blockstarts=blockstarts-(Newstart-Txnstart);blockstarts[1]=0
+  #  Exmp[i,2]=Newstart
+   # Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  #  Exmp[i,12]=str_replace_all(paste(blockstarts, ",",collapse =""), fixed(" "), "")
+  #}
+  #else {
+    x=1
+    while(x<=Exoncounts&(Newstart>=(Txnstart+blockstarts[x]+blocksizes[x]))){
+      x=x+1
+    }
+    
+    blockstarts=blockstarts[x:Exoncounts]
+    blocksizes=blocksizes[x:Exoncounts]
+    blocksizes[1]=(Txnstart+blockstarts[1]+blocksizes[1])-Newstart
+    Exmp[i,10]=length(blockstarts)
+    blockstarts=blockstarts-(Newstart-Txnstart);blockstarts[1]=0
+    Exmp[i,2]=Newstart
+    Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+    Exmp[i,12]=str_replace_all(paste(blockstarts, ",",collapse =""), fixed(" "), "")
+    
+  #}
+}
+mn.tmp=Exmp[,1:12]
+head(mn.tmp,100)
+final.THP1.ref.cps.BED13=bind_rows(pl.tmp,mn.tmp)%>%arrange(V1,V2,V3)
+ref%>%filter(ref$V4=="ENST00000548571.1")
+sum(duplicated(final.THP1.ref.cps.BED13$V4))
+final.THP1.ref.cps.BED13%>%
+  filter(V4=="ENST00000548571.1:56159647:chr12:56160281")
+nrow(final.THP1.ref.cps.BED13)#31490
+#Coding region editing
+str(final.THP1.ref.cps.BED13)
+final.THP1.ref.cps.BED13%>%filter(V6=="+")%>%filter(V8>V3)%>%nrow()#N=268
+final.THP1.ref.cps.BED13%>%filter(V6=="-")%>%filter(V7<V2)%>%nrow()#N=251
+final=final.THP1.ref.cps.BED13%>%mutate(V8=ifelse((V6=="+"&V8>V3),V3,V8))%>%mutate(V7=ifelse((V6=="-"&V7<V2),V2,V7))
+nrow(final)
+write.table(final,"new_THP1Transcript.n.31490.bed13",col.names=F,quote=F,row.names = F,sep="\t")
+
+```
+
+```{R}
+new<-read.table("new_THP1Transcript.n.31490.bed13")
+(new)%>%select(V13)%>%arrange(V13)%>%distinct()%>%nrow()
+nrow(new)
+
+```

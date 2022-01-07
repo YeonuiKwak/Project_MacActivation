@@ -1,0 +1,209 @@
+---
+title: "Step4_Statistics of Tandem 3UTR"
+author: "Yeonui+Kwak"
+date: "8/8/2020"
+output: html_document
+---
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig2/Rcode/")
+
+```
+
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+
+4. Statistics for how many ALE and how many tandem UTR using the table from code 3.
+```{R}
+final=read.table("custom.pal.withoutnearbyPAS.txt",header=T,stringsAsFactors = F)
+colnames(final)
+
+t=final%>%
+  filter(meanpal<300)%>%
+  group_by(hgnc,ALE)%>%summarise(tandem_count=n())%>%
+  #filter(tandem_count>=1)%>%
+  unite(newid,c(hgnc,ALE),sep=":")%>%
+  group_by(tandem_count)%>%summarise(Lastexon.count=n())%>%
+mutate(group=ifelse(tandem_count==1,"single 3'UTR","multiple tandem 3'UTRs"))%>%
+  mutate(count=factor(tandem_count,levels = c(1:7)))
+write.table(t,"Fig2B_table.txt",col.names = T,row.names = F,quote = F,sep="\t")
+#t=bind_rows(t,c(6,0,"multiple tandem 3´UTRs",6))
+pdf("Fig2B_tandem3'UTR stat3.pdf",width=5,height=3)
+ggplot(t,aes(x=as.factor(count),y=Lastexon.count,fill=group))+geom_bar(stat="identity")+theme_bw()+ylab("Number of last exons")+xlab("Number of tandem 3'UTRs")+theme_minimal()+scale_fill_manual(values =yk.col(2)[c(1,2)])+ scale_x_discrete(limits=c("1", "2","3","4","5","6","7"))
+dev.off()
+
+#final 
+cat("number of transcript isoforms : ",
+final%>%
+  filter(meanpal<300)%>%nrow())
+cat("number of hgnc : ",
+  final%>%group_by(hgnc,ALE)%>%summarise(tandem_count=n())%>%filter(tandem_count>0)%>%ungroup()%>%summarise(n_distinct(hgnc))%>%unlist())
+cat("number of lastexons:",sum(t$Lastexon.count))
+```
+
+4. Compare PAL between tandem 3'UTRs
+Custom3: File that contains only genes with multiple tandem 3UTRs
+```{R}
+#final%>%separate(`newid:ALE:tandem`,c("hgnc","ALE","tandem"),sep=":")%>%filter(hgnc=="ATRIP")
+t=final%>%
+  filter(meanpal<300)%>%
+  group_by(hgnc,ALE)%>%summarise(tandem_count=n())%>%filter(tandem_count%in%c(2,3))%>%
+  unite(newid,c(hgnc,ALE),sep=":")
+custom3=final%>%
+  filter(meanpal<300)%>%
+  unite("newid",c(hgnc,ALE),sep=":")%>%
+  inner_join(t,by="newid")%>%
+  separate(newid,c("hgnc","ALE"),sep=":")%>%arrange(hgnc)
+```
+#Paired comparison
+
+```{R}
+pdf("tandemUTR_Poly(A) tail length.pdf",width=4,height=3)
+test1=custom3%>%filter(tandem_count==2)%>%select(hgnc,ALE,Tandem,meanpal)%>%spread(Tandem, meanpal)%>%mutate(diff=`2`-`1`)%>%mutate(type="Tandem(n=2)")
+test2=custom3%>%filter(tandem_count==3)%>%select(hgnc,ALE,Tandem,meanpal)%>%spread(Tandem, meanpal)%>%mutate(diff=`3`-`1`)%>%mutate(type="Tandem(n=3)")
+omit.list=custom3%>%filter(tandem_count==2)%>%select(hgnc,ALE,Tandem,utrlen)%>%spread(Tandem, utrlen)%>%mutate(diff=`2`-`1`)%>%filter(diff<0)%>%unite(hgncale,c("hgnc","ALE"),sep=":")%>%select(hgncale)
+test=bind_rows(test1,test2)%>%unite(hgncale,c("hgnc","ALE"),sep=":")%>%filter(!(hgncale %in% omit.list$hgncale)) 
+test%>%group_by(type)%>%summarise(n())
+ggplot(test,aes(x=type,y=diff,fill=type))+geom_boxplot(notch=T)+theme_bw()+
+  #geom_histogram(binwidth = 2)+
+  theme_bw()+scale_fill_manual(values=yk.col(9)[c(9,7,5:1)])+
+  ylab(expression(Delta*"poly(A) tail length (distal-proximal)"))+xlab("Number of Tandem UTRs per last exon")+ylim(c(-50,50))
+dev.off()
+
+
+pdf("tandemUTR_UTR length.pdf",width=4,height=3)
+test1=custom3%>%filter(tandem_count==2)%>%select(hgnc,ALE,Tandem,utrlen)%>%spread(Tandem, utrlen)%>%mutate(diff=`2`-`1`)%>%mutate(type="Tandem(n=2)")
+test2=custom3%>%filter(tandem_count==3)%>%select(hgnc,ALE,Tandem,utrlen)%>%spread(Tandem, utrlen)%>%mutate(diff=`3`-`1`)%>%mutate(type="Tandem(n=3)")
+omit.list=custom3%>%filter(tandem_count==2)%>%select(hgnc,ALE,Tandem,utrlen)%>%spread(Tandem, utrlen)%>%mutate(diff=`2`-`1`)%>%filter(diff<0)%>%unite(hgncale,c("hgnc","ALE"),sep=":")%>%select(hgncale)
+
+test=bind_rows(test1,test2)%>%unite(hgncale,c("hgnc","ALE"),sep=":")%>%filter(!(hgncale %in% omit.list$hgncale)) 
+ggplot(test,aes(x=type,y=diff,fill=type))+geom_boxplot(notch=T)+theme_bw()+
+  #geom_histogram(binwidth = 2)+
+  theme_bw()+scale_fill_manual(values=yk.col(9)[c(9,7,5:1)])+
+  ylab(expression(Delta*"3´UTR length (distal-proximal)"))+xlab("Number of Tandem UTRs per last exon")
+dev.off()
+
+
+pdf("tandemUTR_RNA.pdf",width=4,height=3)
+custom4=custom3%>%ungroup()%>%group_by(hgnc)%>%mutate(newratio=readcount/sum(readcount))
+
+test1=custom4%>%filter(tandem_count==2)%>%select(hgnc,ALE,Tandem,newratio)%>%spread(Tandem, newratio)%>%mutate(diff=`2`-`1`)%>%mutate(type="Tandem(n=2)")
+test2=custom4%>%filter(tandem_count==3)%>%select(hgnc,ALE,Tandem,newratio)%>%spread(Tandem, newratio)%>%mutate(diff=`3`-`1`)%>%mutate(type="Tandem(n=3)")
+omit.list=custom4%>%filter(tandem_count==2)%>%select(hgnc,ALE,Tandem,utrlen)%>%spread(Tandem, utrlen)%>%mutate(diff=`2`-`1`)%>%filter(diff<0)%>%unite(hgncale,c("hgnc","ALE"),sep=":")%>%select(hgncale)
+
+test=bind_rows(test1,test2)%>%unite(hgncale,c("hgnc","ALE"),sep=":")%>%filter(!(hgncale %in% omit.list$hgncale)) 
+ggplot(test,aes(x=type,y=diff,fill=type))+geom_boxplot(notch=T)+theme_bw()+
+  #geom_histogram(binwidth = 2)+
+  theme_bw()+scale_fill_manual(values=yk.col(9)[c(9,7,5:1)])+
+  ylab(expression(Delta*"RNA abundance (distal-proximal)"))+xlab("Number of Tandem UTRs per last exon")
+dev.off()
+
+```
+#Fig2D: number of transcript isoforms with PAL>200nt
+```{R}
+stat=custom3%>%
+  filter(meanpal>200)%>%
+  group_by(tandem_count,Tandem)%>%summarise(number=n())
+
+write.table(stat,"trasncriptisoform_PALgt200Count_pertandemUTRgroup.txt",col.names = T,row.names = F,sep="\t",quote=F)
+```
+
+
+
+
+#Number of genes with multiple tandem UTRs
+```{R}
+custom3%>%ungroup()%>%unite("newid",c(hgnc,ALE))%>%summarise(n_distinct(newid))
+custom3%>%ungroup()%>%summarise(n_distinct(hgnc))
+```
+
+#Number of genes with multiple tandem UTRs, where distal poly(A) tail is longer.
+1)Genes with more than 2 tandem UTRs. all combination of two tandem UTRs are compared in their tail lengths
+```{R}
+dat.list=list()
+for (i in c(2,3,4,5,7)){
+ tmp=custom3%>%ungroup()%>%filter(tandem_count==i)%>%select(hgnc,ALE,tandem_count,new.tandem,meanpal)%>%spread(new.tandem,meanpal)
+ if (i>2){
+   m=combn(1:i,2)
+   mat.list=list()
+   for (x in 1:ncol(m)){
+     two=c(m[,x])
+     t=tmp[,c(1:3,two+3)]
+    colnames(t)=c("hgnc","ALE","tandem_count","proximal","distal")
+     tmp2=data.frame(t,type=paste(as.character(two),collapse ="-"))
+     mat.list[[x]]=tmp2
+   }
+   dat.list[[i]]=mat.list%>%reduce(bind_rows)
+   
+ }
+ else{
+   colnames(tmp)=c("hgnc","ALE","tandem_count","proximal","distal")
+ dat.list[[i]]=data.frame(tmp,type=paste(as.character(c(1,2)),collapse ="-"))
+ }
+}
+
+final.custom.tandem=dat.list%>%reduce(bind_rows)
+```
+#Vendiagram numbers
+```{r}
+final.custom.tandem2=final.custom.tandem%>%filter(proximal<=200&distal<=200)%>%mutate(diff=distal-proximal)
+ggplot(final.custom.tandem2,aes(y=diff))+geom_boxplot()
+t.test(final.custom.tandem2$diff)
+final.custom.tandem%>%filter(proximal<=200)%>%unite("newid",c(hgnc,ALE))%>%summarise(n_distinct(newid))
+final.custom.tandem%>%filter(distal<=200)%>%unite("newid",c(hgnc,ALE))%>%summarise(n_distinct(newid))
+final.custom.tandem%>%filter(distal>200&proximal>200)%>%unite("newid",c(hgnc,ALE))%>%summarise(n_distinct(newid))
+final.custom.tandem2%>%unite("newid",c(hgnc,ALE))%>%summarise(n_distinct(newid))
+final.custom.tandem2%>%summarise(n_distinct(hgnc))
+final.custom.tandem%>%filter(distal>200&proximal>200)
+```
+#BOXplot
+```{R}
+pdf("CustomTEDseq_TandemUTR_medianPAL.pdf",width=3,height=10)
+line1="tandem 3´UTRs"
+line2=expression("(proximal"*symbol('\256')*"distal)")
+
+stat_box_data <- function(x, upper_limit = max(custom3$meanpal) * 1.15) {
+  return( 
+    data.frame(
+      y = 0.95 * upper_limit,
+      label = paste('count =', 
+                    format(length(x), big.mark = ",", decimal.mark = ".", scientific = FALSE), 
+                    '\n',
+                    'mean =', 
+                    format(round(mean(x), 1), big.mark = ",", decimal.mark = ".", scientific = FALSE))
+    )
+  )
+}
+p<-ggplot(custom3,aes(x=Tandem,y=meanpal,fill=as.factor(Tandem)))+
+  geom_boxplot(notch = T)+
+facet_grid(tandem_count~.,scale="free")+
+  #stat_summary(fun.data = stat_box_data, geom = "text", hjust = 0.5,vjust = 0.9x) + 
+  #geom_dotplot(alpha=1,binaxis = "y", stackgroups = TRUE, binwidth =1,dotsize =2, stackdir="center")+
+  theme_bw()+theme(legend.position = "none")+xlab("")+
+scale_fill_manual(values=yk.col(9)[c(9,7,5:1)])+theme(axis.title.x = element_text(size = 10, # also adjust text size if needed
+                                    margin = margin(t = 10, r = 0, b = 0, l = 0,
+                                                    unit = "mm")))+
+  coord_flip()+
+  xlab((expression("tandem 3´UTRs (proximal"*symbol('\256')*"distal)")))+ylab("Mean poly(A) tail length (nt)")
+ggdraw(p)#+
+  #draw_label(line1, x = 0.55, y = 0.075) + # use relative coordinates for positioning
+  #draw_label(line2, x = 0.55, y = 0.025)
+  dev.off()
+```

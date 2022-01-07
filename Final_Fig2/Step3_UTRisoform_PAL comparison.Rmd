@@ -1,0 +1,168 @@
+---
+title: 'Step3: Custom poly(A) tail length and 3’UTR length and indexing'
+author: "Yeonui+Kwak"
+date: "8/8/2020"
+output: html_document
+---
+
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig2/Rcode/")
+
+```
+
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+1.load custom PAL table.
+
+```{R}
+#update1 custom rep1 and rep2 mean value was used for analysis!
+rep1<-read.table("custom.0h.rep1.PAL.table.txt",header=T,stringsAsFactors = F)
+rep2<-read.table("custom.0h.rep2.PAL.table.txt",header=T,stringsAsFactors = F)
+#custom transcriptome indexed file.
+index<-read.table("transcript.custom.ALE.tandem.index.annotation.txt",header=T,stringsAsFactors = F)
+utrlen=read.table("custom.UTRlen.table.txt",header=T,stringsAsFactors = F)
+```
+```{R}
+rep1=rep1%>%unite("newid",c(id,chr,cpspos),sep=":",remove=F)
+rep2=rep2%>%unite("newid",c(id,chr,cpspos),sep=":",remove=F)
+pal=inner_join(rep1,rep2%>%select(newid,meanpal),by="newid")%>%mutate(meanpal = rowMeans(select(.,meanpal.x,meanpal.y)))
+cat("number of transcript isoforms detected in TED",pal%>%summarise(n_distinct(hgnc))%>%unlist())
+cat("number of hgnc detected in TED",pal%>%summarise(n_distinct(newid))%>%unlist())
+#average of two biological replicates of 0h.
+pal.final=pal%>%select(newid,meanpal,relpos)
+#indexing the PAL table with ALE and tandem index.
+index2=index%>%separate(V4,c("id","refpos","chr","CPSpos"),sep=":",remove=F)%>%unite("newid",c(id,chr,CPSpos),sep=":",remove=F)
+utrlen=utrlen%>%separate(V4,c("id","refpos","chr","CPSpos"),sep=":",remove=F)%>%unite("newid",c(id,chr,CPSpos),sep=":",remove=F)
+custom=pal.final%>%inner_join(index2,by="newid")%>%select(hgnc,newid,ALE,Tandem,meanpal,CPSpos,V6,relpos)
+nrow(custom)
+#add custom 3UTR length info
+custom=custom%>%inner_join(utrlen%>%select(newid,utrlen),by="newid")
+nrow(custom)
+```
+Output from the code above: nrow:11666 isoforms
+```{R}
+write.table(custom,"custom.0h.PAL.ALE.Tandem.table.txt",col.names = T,row.names = F,quote=F,sep="\t")
+sink("outfile_After custom.0h.PAL.ALE.Tandem.example.txt")
+
+custom%>%filter(hgnc=="UBE2J2")
+custom%>%filter(hgnc=="SPSB1")
+custom%>%filter(hgnc=="ANTXR1")
+custom%>%filter(hgnc=="CD83")
+custom%>%filter(hgnc=="SRF")
+
+sink()
+
+```
+2. RNA abundance info is added.
+
+```{R}
+custom<-read.table("custom.0h.PAL.ALE.Tandem.table.txt",header=T,stringsAsFactors = F)
+custom2=custom%>%separate(newid,c("id","chr","CPSpos2"),sep=":")%>%unite("newid",c(id,CPSpos),sep=":",remove = F)%>%select(-CPSpos2)%>%unite("tandemclusterid",c(hgnc,ALE,Tandem),sep=":",remove=F)
+head(custom2)
+index=custom2%>%select(newid,tandemclusterid)#%>%unite("tandemclusterid",c(hgnc,ALE,Tandem),sep=":")
+head(index)
+```
+
+
+```{r}
+ratio=read.table("cpspeak.readcount.table.2020.08.07.3UTR1KB.ext.txt",header=T,stringsAsFactors = F)
+head(ratio2)
+str(ratio)
+ratio2=ratio%>%filter(time==0)%>%unite("newid",c(id,CPSpos),sep=":",remove = F)%>%inner_join(index,by="newid")%>%select(newid,tandemclusterid,cps.ratio.perhgnc,readcount)%>%arrange(tandemclusterid,readcount)%>%distinct_at(vars(newid),.keep_all = T)
+#Join RNA abundance table to PAL table.
+tmp2=custom2%>%ungroup()%>%inner_join(ratio2%>%select(newid,cps.ratio.perhgnc,readcount),by="newid")
+head(tmp2)
+tmp2%>%filter(hgnc=="CD83")
+tmp2=tmp2%>%rename(strand=V6)%>%select(hgnc,newid,id,tandemclusterid,chr,ALE,Tandem,meanpal,CPSpos,strand,relpos,utrlen,cps.ratio.perhgnc,readcount)
+
+#Re index ALE and Tandem
+ale.index.tmp=tmp2%>%group_by(hgnc)%>%arrange(ALE)%>%distinct_at(vars(ALE),.keep_all =T)%>%mutate(newALE=rank(ALE))%>%ungroup()%>%unite("hgncale",c(hgnc,ALE),sep=":",remove=F)%>%
+  select(hgncale,newALE)%>%inner_join(tmp2%>%unite("hgncale",c(hgnc,ALE),sep=":",remove=F),by="hgncale")%>%select(-hgncale,-ALE)%>%rename(ALE=newALE)
+
+final=ale.index.tmp%>%group_by(hgnc,ALE)%>%arrange(Tandem)%>%distinct_at(vars(Tandem),.keep_all =T)%>%mutate(newTandem=rank(Tandem))%>%ungroup()%>%
+  select(tandemclusterid,newTandem)%>%inner_join(ale.index.tmp,by="tandemclusterid")%>%select(-Tandem)%>%rename(Tandem=newTandem)%>%select(-tandemclusterid)%>%unite("tandemclusterid",c(hgnc,ALE,Tandem),sep=":",remove=F)
+
+write.table(final,"final_Fig2TABLEforUTRisoformanalysis.txt",col.names = T,row.names = F,quote=F,sep="\t")
+
+
+tmp2%>%filter(hgnc=="CD83")
+ale.index.tmp%>%filter(hgnc=="CD83")
+final%>%filter(hgnc=="CD83")
+final%>%filter(hgnc=="CD83")
+colnames(final)
+nrow(final)
+```
+Columns
+ [1] "tandemclusterid"   "Tandem"            "ALE"               "hgnc"             
+ [5] "newid"             "id"                "chr"               "meanpal"          
+ [9] "CPSpos"            "strand"            "relpos"            "utrlen"           
+[13] "cps.ratio.perhgnc" "readcount"  
+
+2. Local tandem cluster, filter out minor peaks.
+Define distance.test
+Purpose: When tandem 3'UTR is within 300 nt windows from each other, we will exclude isoforms with minor frequency.
+Because it can cause bias that distal tandem UTR always have longer poly(A) because they calculate poly(A) tail length based on the same TED-seq distribution.
+
+```{R}
+distance.test=function(cps=CPSpos,ratio=cps.ratio.perhgnc,id=Tandem){
+  table=data.frame("cps"=cps,"ratio"=ratio,"id"=id)
+  index=c()
+  prev=1
+  nex=prev+1
+  while(prev<nrow(table)&nex<=nrow(table)){
+    if(abs(table[prev,1]-table[nex,1])<300){
+        if(table[prev,2]>table[nex,2]){
+         nex=nex+1 
+        }
+        else{
+          prev=nex
+          nex=nex+1
+        }
+      #index=c(index,prev)
+      }
+    else{
+      index=c(index,table[prev,3])
+    prev=nex
+    }
+  }
+  index=c(index,table[prev,3])
+  return(str_replace_all(paste(index,",",collapse =""), fixed(" "), ""))
+}
+```
+3. Use the above function, and leave PAL info for non-overlapping PAS isoforms without nearby PAS.
+```{R}
+#result=#
+newCPSid=final%>%group_by(hgnc,ALE)%>%summarise(t=distance.test(cps=CPSpos,ratio=cps.ratio.perhgnc,id=Tandem))%>%
+  separate_rows(t,sep=",")%>%filter(t!="")%>%unite("hgnc:ALE:tandem",c(hgnc,ALE,t),sep=":")
+cat("without multiple cps within 300 nucleotides.",nrow(newCPSid))
+final=final%>%inner_join(newCPSid%>%rename(tandemclusterid=`hgnc:ALE:tandem`), by="tandemclusterid")
+nrow(final)
+#reindexing again after removing minor peaks.
+final2=final%>%group_by(hgnc,ALE)%>%arrange(Tandem)%>%distinct_at(vars(Tandem),.keep_all =T)%>%mutate(newTandem=rank(Tandem))%>%ungroup()%>%
+  select(tandemclusterid,newTandem)%>%inner_join(final,by="tandemclusterid")%>%select(-Tandem)%>%rename(Tandem=newTandem)%>%select(-tandemclusterid)%>%unite("tandemclusterid",c(hgnc,ALE,Tandem),sep=":",remove=F)
+
+write.table(final2,"custom.pal.withoutnearbyPAS.txt",col.names = T,row.names = F,sep="\t",quote=F)
+
+final2%>%filter(hgnc=="CD83")
+
+```
+

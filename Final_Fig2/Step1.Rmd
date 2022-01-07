@@ -1,0 +1,111 @@
+---
+title: "Fig2B: Poly(A) tail length measurement using 0h sample"
+author: "Yeonui+Kwak"
+date: "8/7/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig2/Rcode")
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+3. Load the custom PAL table.txt
+
+```{R}
+ted=read.table("tedseq.custom.rep1.0hr.txt", stringsAsFactors = F, header=F)
+ted=read.table("tedseq.custom.rep2.0hr.txt", stringsAsFactors = F, header=F)
+#ted=read.table("tmp.txt", stringsAsFactors = F, header=F)
+```
+
+4. Calulate mean PAL lengths for each PAS isoform.
+```{r}
+dat2=as_tibble(ted);dat2$sum=rowSums(dat2[202:501])
+d0h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%
+  select(1,202:501)
+m=d0h
+meanpal=c();spike_first=13
+#spike_second=16
+for (i in 1:nrow(m)){
+  vec_former=c()
+  for (j in 1:300){
+    vec_former=c(vec_former,rep(j+spike_first,m[i,j+1]))
+  }
+  mpal=mean(vec_former)
+  meanpal=c(meanpal,mpal)
+}
+head(d0h)
+custom=d0h%>%select(V1)%>%mutate(meanpal=meanpal)
+custom=custom%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":")%>%
+  mutate(refpos=as.numeric(refpos))%>%mutate(cpspos=as.numeric(cpspos))%>%
+  mutate(relpos=cpspos-refpos)
+ted%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":")%>%filter(id=="ENST00000523079.5")
+ref<-read.table("./Reference/transcripts.bed13",header = F,stringsAsFactors = F)
+ref=ref%>%select(V4,V6,V13)
+ref=ref%>%rename(id=V4)
+
+custom=custom%>%inner_join(ref,by="id")%>%rename(strand=V6)%>%rename(hgnc=V13)%>%
+  mutate(relpos=ifelse(strand=="+",relpos,-relpos))
+custom%>%select(hgnc)%>%arrange(hgnc)%>%distinct()%>%nrow() #6611
+write.table(custom,"custom.0h.rep1.PAL.table.txt",col.names = T,row.names = F,quote=F,sep="\t")
+#custom<-read.table("custom.0h.PAL.table.txt",header=T,stringsAsFactors = F)
+nrow(custom)
+```
+
+```{R}
+ted=read.table("tedseq.custom.rep2.0hr.txt", stringsAsFactors = F, header=F)
+#ted=read.table("tmp.txt", stringsAsFactors = F, header=F)
+```
+```{r}
+dat2=as_tibble(ted);dat2$sum=rowSums(dat2[202:501])
+d0h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%
+  select(1,202:501)
+m=d0h
+meanpal=c();#spike_first=13
+spike_second=16
+for (i in 1:nrow(m)){
+  vec_former=c()
+  for (j in 1:300){
+    vec_former=c(vec_former,rep(j+spike_second,m[i,j+1]))
+  }
+  mpal=mean(vec_former)
+  meanpal=c(meanpal,mpal)
+}
+head(d0h)
+custom=d0h%>%select(V1)%>%mutate(meanpal=meanpal)
+custom=custom%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":")%>%
+  mutate(refpos=as.numeric(refpos))%>%mutate(cpspos=as.numeric(cpspos))%>%
+  mutate(relpos=cpspos-refpos)
+ted%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":")%>%filter(id=="ENST00000523079.5")
+ref<-read.table("./Reference/transcripts.bed13",header = F,stringsAsFactors = F)
+ref=ref%>%select(V4,V6,V13)
+ref=ref%>%rename(id=V4)
+
+custom=custom%>%inner_join(ref,by="id")%>%rename(strand=V6)%>%rename(hgnc=V13)%>%
+  mutate(relpos=ifelse(strand=="+",relpos,-relpos))
+custom%>%select(hgnc)%>%arrange(hgnc)%>%distinct()%>%nrow() #8890
+write.table(custom,"custom.0h.rep2.PAL.table.txt",col.names = T,row.names = F,quote=F,sep="\t")
+#custom<-read.table("custom.0h.PAL.table.txt",header=T,stringsAsFactors = F)
+nrow(custom)
+```
+

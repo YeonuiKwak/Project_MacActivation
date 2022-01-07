@@ -1,0 +1,157 @@
+---
+title: "Step2_ALE and Tandem Indexing and custom 3UTR length calculation"
+author: "Yeonui+Kwak"
+date: "8/8/2020"
+output: html_document
+---
+1.Indexing transcript with ALE based on start position of the exon containing stopcodon.
+1.1 ALE assigning
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig2/Rcode/")
+
+```
+```{R}
+#tandem UTRs is equal to transcripts with stopcodon in common
+ref<-read.table("./Reference/transcripts.bed13",header = F,stringsAsFactors = F)
+```
+
+#stopcodon position is not good due to tandem stopcodon.
+Define ALE position by the start site of Exon containing stopcodon.
+```{R}
+Exmp=ref%>%filter(V6=="+")%>%filter(V7!=V8)%>%mutate(ALEpos=NA)
+Exmp
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,8])
+  Txnstart=as.numeric(Exmp[i,2])
+  Exoncounts=as.numeric(Exmp[i,10])
+  count=1
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+    #blocksizes[length(blockstarts)]=Newend-(Txnstart+(blockstarts[length(blockstarts)]))
+    #Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  }
+  count=count-1
+  Exmp[i,14]=Txnstart+blockstarts[count]
+  }
+
+pl=Exmp
+Exmp=ref%>%filter(V6=="-")%>%filter(V7!=V8)%>%mutate(ALEpos=NA)
+Exmp
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,7])
+  Txnstart=as.numeric(Exmp[i,2])
+  Exoncounts=as.numeric(Exmp[i,10])
+  count=1
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+  }
+  count=count-1
+  Exmp[i,14]=Txnstart+blockstarts[count]+blocksizes[count]
+  }
+
+mn=Exmp
+
+ALEpos=bind_rows(pl,mn)%>%arrange(V1,V2,V3)%>%mutate(ALEpos=as.numeric(ALEpos))
+ALEpos%>%filter(V13=="UBE2J2")
+write.table(ALEpos%>%select(V4,ALEpos)%>%rename(id=V4),"ALEposannotation.txt",col.names = T,row.names = F,quote=F,sep="\t")
+```
+7) ALE indexing based on ALE pos. (For only protein coding mRNAs)
+```{R}
+#ALE indexing based on ALE pos
+ref2=ALEpos%>%select(V4,V13,V7,V8,V6,V2,V3,ALEpos)%>%
+  #mutate(refpos=ifelse(V6=="+",V3,V2))%>%
+  #mutate(stopcodon=ifelse(V6=="+",V8,V7))%>%
+  rename(id=V4)%>%rename(hgnc=V13)%>%rename(strand=V6)%>%filter(V7!=V8)%>%
+  arrange(hgnc,ALEpos)%>%group_by(hgnc)%>%distinct_at(vars(ALEpos),.keep_all =T)%>%
+  mutate(ALE=ifelse(strand=="+",rank(ALEpos),rank(-ALEpos)))%>%ungroup()%>%select(hgnc,ALEpos,ALE)%>%unite("hgnc:ALEpos",c(hgnc,ALEpos),sep=":")
+
+
+ref3=ALEpos%>%select(V4,V13,V7,V8,V6,V2,V3,ALEpos)%>%
+  #mutate(refpos=ifelse(V6=="+",V3,V2))%>%
+  #mutate(stopcodon=ifelse(V6=="+",V8,V7))%>%
+  rename(id=V4)%>%rename(hgnc=V13)%>%rename(strand=V6)%>%filter(V7!=V8)%>%
+  arrange(hgnc,ALEpos)%>%
+  unite("hgnc:ALEpos",c(hgnc,ALEpos),sep=":")%>%
+  inner_join(ref2,by="hgnc:ALEpos")%>%separate(`hgnc:ALEpos`,c("hgnc","ALEpos"),sep=":")
+
+write.table(ref3,"transcript.reference.ALE.index.annotation.txt",col.names = TRUE,row.names = F,sep="\t",quote=F)
+head(ref3,10)
+```
+
+
+Define tandem UTRs based on transcript ending positions by strand.
+-Tandem UTR indexing based on custom transcript ending site.
+```{r}
+ALEindex=ref3%>%select(id,ALE,hgnc)%>%ungroup()
+ref<-read.table("new_THP1Transcript.n.31490.bed13", header=F, stringsAsFactors = F)
+ref<-ref%>%separate(V4,c("id","refpos","chr","CPSpos"),sep=":",remove = F)%>%mutate(CPSpos=as.numeric(CPSpos))
+#Tandem UTR indexing based on ref transcript ending site.
+ref4=ref%>%inner_join(ALEindex,by="id")%>%
+  group_by(hgnc,ALE)%>%arrange(ALE,CPSpos)%>%distinct_at(vars(CPSpos),.keep_all=T)%>%
+  mutate(Tandem=ifelse(V6=="+",rank(CPSpos),rank(-CPSpos)))%>%ungroup()%>%select(hgnc,ALE,CPSpos,Tandem)%>%unite("newid",c(hgnc,ALE,CPSpos),sep=":")
+
+
+finalref=ref%>%inner_join(ALEindex,by="id")%>%unite("newid",c(hgnc,ALE,CPSpos),sep=":")%>%inner_join(ref4,by="newid")%>%separate(newid,c("hgnc","ALE","CPSpos"),sep=":")%>%select(V1,V2,V3,V4,V5,V6,V7,V8,V9,V10,V11,V12,id,ALE,Tandem,refpos,CPSpos,hgnc)
+
+write.table(finalref,"transcript.custom.ALE.tandem.index.annotation.txt",col.names = TRUE,row.names = F,sep="\t",quote=F)
+
+
+
+```
+
+2. Calculate CUSTOM 3'UTR length for each new transcript annotation.
+```{R}
+ref<-read.table("new_THP1Transcript.n.31490.bed13", header=F, stringsAsFactors = F)
+#ref<-read.table("new_THP1Transcript2.bed13", header=F, stringsAsFactors = F)
+Exmp=ref%>%filter(V6=="+")%>%filter(V7!=V8)%>%select(-V13)%>%mutate(utrlen=NA)
+Exmp
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,8])
+  Txnstart=as.numeric(Exmp[i,2])
+  Exoncounts=as.numeric(Exmp[i,10])
+  count=1
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+    #blocksizes[length(blockstarts)]=Newend-(Txnstart+(blockstarts[length(blockstarts)]))
+    #Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  }
+  count=count-1
+  len=sum(blocksizes[count:Exoncounts])-(stopcodon-(Txnstart+blockstarts[count]))
+  Exmp[i,13]=len
+  }
+
+pl=Exmp
+str(Exmp)
+Exmp=ref%>%filter(V6=="-")%>%filter(V7!=V8)%>%select(-V13)%>%mutate(utrlen=NA)
+
+for (i in 1:nrow(Exmp)){
+
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,7])
+  Txnstart=as.numeric(Exmp[i,2])
+  Exoncounts=as.numeric(Exmp[i,10])
+  count=1
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+  }
+  count=count-1
+  len=sum(blocksizes[1:count])-(Txnstart+blockstarts[count]+blocksizes[count]-stopcodon)
+  Exmp[i,13]=len
+ }
+head(Exmp)
+mn=Exmp
+utrlen=bind_rows(pl,mn)%>%arrange(V1,V2,V3)
+head(utrlen);utrlen%>%filter(utrlen==0)%>%nrow() #556 transcirpt isoforms dont' contain 3UTRs.
+#remove the transcript annotatino without 3'UTRs
+utrlen=utrlen%>%filter(utrlen>0)
+write.table(utrlen,"custom.UTRlen.table.txt",col.names = T,row.names = F,quote = F,sep="\t")
+utr.tmp=utrlen%>%separate(V4,c("id","Refpos","chr","CPSpos"),sep=":")%>%unite("newid",c(chr,CPSpos,id),sep=":")
+```
