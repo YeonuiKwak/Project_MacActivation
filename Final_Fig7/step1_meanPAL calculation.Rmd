@@ -1,0 +1,206 @@
+---
+title: "Step1_ActD_mean PAL calculation"
+author: "Yeonui+Kwak"
+date: "8/16/2020"
+output: html_document
+---
+
+
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig8/Rcode/step1_meanPAL")
+
+```
+2.Load the required packages,and set up colorcode.
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+
+3. Load ActD PAL position table files.  Put four matrix to each variable.
+
+```{R}
+t0<-read.csv("custom.tedseq.rep1.pal.ActD.0hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t1<-read.csv("custom.tedseq.rep1.pal.ActD.1hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2<-read.csv("custom.tedseq.rep1.pal.ActD.2hr.txt",sep="\t",header=F, stringsAsFactors = F)
+First=t0
+Second=t1
+Third=t2
+#rep1
+spike_first=-20
+spike_second=-20
+spike_third=-16 #### need to be updated!!
+
+```
+
+
+
+3.3 filter transcripts with more than 50 read counts.
+```{R}
+start=Sys.time()
+dat2=as_tibble(First);dat2$sum=rowSums(dat2[203:502])
+d0h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%
+  select(1,203:502)
+
+dat2=as_tibble(Second);dat2$sum=rowSums(dat2[203:502])
+d1h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+
+dat2=as_tibble(Third);dat2$sum=rowSums(dat2[203:502])
+d2h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+```
+
+innerjoin all samples.
+```{R}
+head(m2)
+m=list(d0h,d1h,d2h)%>%reduce(inner_join,by="V1")
+#m2=m%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":")%>%unite("newid",c(id,refpos,cpspos),sep=":")
+m%>%drop_na%>%nrow() #13322
+m=m%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":",remove=F)%>%unite("newid",c(id,cpspos),sep=":")%>%select(-chr,-refpos)
+head(m)
+```
+
+1. Calculate mean PAL, and ks.test pvalue after normalizing spike-in values.
+
+rep1
+```{R}
+start=Sys.time()
+mean1=c();mean2=c();mean3=c();mean4=c()
+
+for (i in 1:nrow(m)){
+  vec_1=c()
+  for (j in 1:300){
+    vec_1=c(vec_1,rep(j+spike_first,m[i,j+2]))
+  }
+  vec_2=c()
+  for (k in 1:300){
+    vec_2=c(vec_2,rep(k+spike_second, m[i,k+302]))
+  }
+  vec_3=c()
+  for (k in 1:300){
+    vec_3=c(vec_3,rep(k+spike_third, m[i,k+602]))
+  }
+
+   mean1=c(mean1,mean(vec_1))
+   mean2=c(mean2,mean(vec_2))
+   mean3=c(mean3,mean(vec_3))
+
+}
+m$`meanpal_0`=mean1
+m$`meanpal_1`=mean2
+m$`meanpal_2`=mean3
+
+end=Sys.time()
+cat("Running time for loading the files was",end-start,"mins")
+nrow(m) #1133322
+```
+
+```{R}
+stat.final=m%>%select(newid,V1,contains("meanpal"))#%>%inner_join(final.pas,by="newid")
+nrow(stat.final) #13322
+write.table(stat.final,"ActD_13322.PASisoforms_meanPAL_rep1.txt",col.names = T,row.names = F,quote = F,sep="\t")
+
+```
+
+Replicate2
+
+
+```{R}
+str(t0)
+t2.0<-read.csv("custom.tedseq.rep2.pal.ActD.0hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2.1<-read.csv("custom.tedseq.rep2.pal.ActD.1hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2.2<-read.csv("custom.tedseq.rep2.pal.ActD.2hr.txt",sep="\t",header=F, stringsAsFactors = F)
+First=t2.0
+Second=t2.1
+Third=t2.2
+
+#rep2
+spike_first=-12
+spike_second=-11
+spike_third=-13
+
+```
+3.3 filter transcripts with more than 50 read counts.
+```{R}
+start=Sys.time()
+dat2=as_tibble(First);dat2$sum=rowSums(dat2[203:502])
+d0h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%
+  select(1,203:502)
+
+dat2=as_tibble(Second);dat2$sum=rowSums(dat2[203:502])
+d1h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+
+dat2=as_tibble(Third);dat2$sum=rowSums(dat2[203:502])
+d2h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+```
+innerjoin all samples.
+```{R}
+head(m2)
+m=list(d0h,d1h,d2h)%>%reduce(inner_join,by="V1")
+#m2=m%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":")%>%unite("newid",c(id,refpos,cpspos),sep=":")
+m%>%drop_na%>%nrow() #12739
+m=m%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":",remove=F)%>%unite("newid",c(id,cpspos),sep=":")%>%select(-chr,-refpos)
+head(m)
+```
+
+1. Calculate mean PAL, and ks.test pvalue after normalizing spike-in values.
+
+rep2
+```{R}
+start=Sys.time()
+mean1=c();mean2=c();mean3=c();
+for (i in 1:nrow(m)){
+  vec_1=c()
+  for (j in 1:300){
+    vec_1=c(vec_1,rep(j+spike_first,m[i,j+2]))
+  }
+  vec_2=c()
+  for (k in 1:300){
+    vec_2=c(vec_2,rep(k+spike_second, m[i,k+302]))
+  }
+  vec_3=c()
+  for (k in 1:300){
+    vec_3=c(vec_3,rep(k+spike_third, m[i,k+602]))
+  }
+
+   mean1=c(mean1,mean(vec_1))
+   mean2=c(mean2,mean(vec_2))
+   mean3=c(mean3,mean(vec_3))
+
+}
+m$`meanpal_0`=mean1
+m$`meanpal_1`=mean2
+m$`meanpal_2`=mean3
+
+end=Sys.time()
+cat("Running time for loading the files was",end-start,"mins")
+head(m)
+```
+
+```{R}
+stat.final=m%>%select(newid,V1,contains("meanpal"))#%>%inner_join(final.pas,by="newid")
+nrow(stat.final) #12739
+write.table(stat.final,"ActD_12739.PASisoforms_meanPAL_rep2.txt",col.names = T,row.names = F,quote = F,sep="\t")
+
+```
+

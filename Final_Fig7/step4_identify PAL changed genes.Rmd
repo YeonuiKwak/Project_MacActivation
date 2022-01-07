@@ -1,0 +1,416 @@
+---
+title: "Step4_kstest"
+author: "Yeonui+Kwak"
+date: "8/16/2020"
+output: html_document
+---
+
+
+
+1.Set a working directory
+```{R}
+getwd()
+setwd("/Users/yeonuikwak/Desktop/Publication_Mar/Final_Fig8/Rcode/step4_kstest")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+
+library(gridExtra)
+#source("scatterPlot.R")
+```
+
+
+3.Statistical Test to identify genes with Significant PAL changes.
+3.Statistical Test to identify genes with Significant PAL changes.
+3.1 Load the TED-seq position matrix 3.2 Put four matrix to each variable.
+
+```{R}
+t0<-read.csv("custom.tedseq.rep1.pal.ActD.0hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t1<-read.csv("custom.tedseq.rep1.pal.ActD.1hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2<-read.csv("custom.tedseq.rep1.pal.ActD.2hr.txt",sep="\t",header=F, stringsAsFactors = F)
+First=t0
+Second=t1
+Third=t2
+#rep1
+spike_first=-20
+spike_second=-20
+spike_third=-16 #### need to be updated!!
+
+```
+
+
+3.3 filter transcripts with more than 50 read counts.
+```{R}
+start=Sys.time()
+dat2=as_tibble(First);dat2$sum=rowSums(dat2[203:502])
+d0h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%
+  select(1,203:502)
+
+dat2=as_tibble(Second);dat2$sum=rowSums(dat2[203:502])
+d1h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+
+dat2=as_tibble(Third);dat2$sum=rowSums(dat2[203:502])
+d2h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+```
+
+innerjoin all samples.
+```{R}
+m=list(d0h,d1h,d2h)%>%reduce(inner_join,by="V1")
+#m2=m%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":")%>%unite("newid",c(id,refpos,cpspos),sep=":")
+m%>%drop_na%>%nrow() #13322
+m=m%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":",remove=F)%>%unite("newid",c(id,cpspos),sep=":")%>%select(-chr,-refpos)
+final.pas<-read.table("ActD.custom.PAL.table.afterRemovinglocalPALswitch.withoutnearbyPAS.txt",header=T,stringsAsFactors = F)
+head(final.pas)
+m=m%>%filter(newid %in%final.pas$newid)
+nrow(m)
+```
+
+1. Calculate mean PAL, and ks.test pvalue after normalizing spike-in values.
+
+rep1
+```{R}
+start=Sys.time()
+ks.pval.1=c();ks.pval.2=c();ks.pval.3=c()
+dmean.1=c();dmean.2=c();dmean.3=c()
+
+for (i in 1:nrow(m)){
+  vec_1=c()
+  for (j in 1:300){
+    vec_1=c(vec_1,rep(j+spike_first,m[i,j+2]))
+  }
+  vec_2=c()
+  for (k in 1:300){
+    vec_2=c(vec_2,rep(k+spike_second, m[i,k+302]))
+  }
+  vec_3=c()
+  for (k in 1:300){
+    vec_3=c(vec_3,rep(k+spike_third, m[i,k+602]))
+  }
+   ks.pval.1=c(ks.pval.1,ks.test(vec_1,vec_2)$p.value)
+   ks.pval.2=c(ks.pval.2,ks.test(vec_1,vec_3)$p.value)
+   ks.pval.3=c(ks.pval.3,ks.test(vec_2,vec_3)$p.value)
+   dmean.1=c(dmean.1,mean(vec_2)-mean(vec_1))
+   dmean.2=c(dmean.2,mean(vec_3)-mean(vec_1))
+   dmean.3=c(dmean.3,mean(vec_3)-mean(vec_2))
+}
+m$`kspval.0:1`=p.adjust(ks.pval.1,method="fdr")
+m$`kspval.0:2`=p.adjust(ks.pval.2,method="fdr")
+m$`kspval.1:2`=p.adjust(ks.pval.3,method="fdr")
+
+m$`dpal.0:1`=dmean.1
+m$`dpal.0:2`=dmean.2
+m$`dpal.1:2`=dmean.3
+
+end=Sys.time()
+cat("Running time for loading the files was",end-start,"mins")
+```
+
+```{R}
+stat.final=m%>%select(newid,contains("dpal"),contains("kspval"))%>%inner_join(final.pas,by="newid")
+nrow(stat.final)
+head(stat.final)
+write.table(stat.final,"ActD.final7100PASisoforms_dpal.kstpval_rep1.txt",col.names = T,row.names = F,quote = F,sep="\t")
+```
+
+3.1 Load the TED-seq position matrix
+#Rep2.
+Replicate2
+
+
+```{R}
+str(t0)
+t2.0<-read.csv("custom.tedseq.rep2.pal.ActD.0hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2.1<-read.csv("custom.tedseq.rep2.pal.ActD.1hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2.2<-read.csv("custom.tedseq.rep2.pal.ActD.2hr.txt",sep="\t",header=F, stringsAsFactors = F)
+First=t2.0
+Second=t2.1
+Third=t2.2
+
+#rep2
+spike_first=-12
+spike_second=-11
+spike_third=-13
+
+```
+3.3 filter transcripts with more than 50 read counts.
+```{R}
+start=Sys.time()
+dat2=as_tibble(First);dat2$sum=rowSums(dat2[203:502])
+d0h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%
+  select(1,203:502)
+
+dat2=as_tibble(Second);dat2$sum=rowSums(dat2[203:502])
+d1h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+
+dat2=as_tibble(Third);dat2$sum=rowSums(dat2[203:502])
+d2h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+```
+innerjoin all samples.
+```{R}
+
+m=list(d0h,d1h,d2h)%>%reduce(inner_join,by="V1")
+m%>%drop_na%>%nrow() #12739
+m=m%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":",remove=F)%>%unite("newid",c(id,cpspos),sep=":")%>%select(-chr,-refpos)
+final.pas<-read.table("ActD.custom.PAL.table.afterRemovinglocalPALswitch.withoutnearbyPAS.txt",header=T,stringsAsFactors = F)
+head(final.pas)
+m=m%>%filter(newid %in%final.pas$newid)
+nrow(m)
+```
+
+```{R}
+start=Sys.time()
+ks.pval.1=c();ks.pval.2=c();ks.pval.3=c()
+dmean.1=c();dmean.2=c();dmean.3=c()
+
+for (i in 1:nrow(m)){
+  vec_1=c()
+  for (j in 1:300){
+    vec_1=c(vec_1,rep(j+spike_first,m[i,j+2]))
+  }
+  vec_2=c()
+  for (k in 1:300){
+    vec_2=c(vec_2,rep(k+spike_second, m[i,k+302]))
+  }
+  vec_3=c()
+  for (k in 1:300){
+    vec_3=c(vec_3,rep(k+spike_third, m[i,k+602]))
+  }
+   ks.pval.1=c(ks.pval.1,ks.test(vec_1,vec_2)$p.value)
+   ks.pval.2=c(ks.pval.2,ks.test(vec_1,vec_3)$p.value)
+   ks.pval.3=c(ks.pval.3,ks.test(vec_2,vec_3)$p.value)
+   dmean.1=c(dmean.1,mean(vec_2)-mean(vec_1))
+   dmean.2=c(dmean.2,mean(vec_3)-mean(vec_1))
+   dmean.3=c(dmean.3,mean(vec_3)-mean(vec_2))
+}
+m$`kspval.0:1`=p.adjust(ks.pval.1,method="fdr")
+m$`kspval.0:2`=p.adjust(ks.pval.2,method="fdr")
+m$`kspval.1:2`=p.adjust(ks.pval.3,method="fdr")
+
+m$`dpal.0:1`=dmean.1
+m$`dpal.0:2`=dmean.2
+m$`dpal.1:2`=dmean.3
+
+end=Sys.time()
+cat("Running time for loading the files was",end-start,"mins")
+```
+
+
+```{R}
+stat.final=m%>%select(newid,contains("dpal"),contains("kspval"))%>%inner_join(final.pas,by="newid")
+nrow(stat.final)
+write.table(stat.final,"ActD.final7100PASisoforms_dpal.kstpval_rep2.txt",col.names = T,row.names = F,quote = F,sep="\t")
+```
+
+
+
+
+```{R}
+
+rep1<-read.table("ActD.final7100PASisoforms_dpal.kstpval_rep1.txt", header=T, stringsAsFactors = F)
+rep2<-read.table("ActD.final7100PASisoforms_dpal.kstpval_rep2.txt", header=T, stringsAsFactors = F)
+ncol(rep1)
+rep1=rep1%>%select(newid,contains("dpal"),contains("kspval"))
+pal.all<-rep2%>%inner_join(rep1,"newid")
+head(pal.all)
+pal.all.mean=pal.all%>%ungroup()%>%select(newid,hgnc,ALE,tandem.new,cluster,V4,contains("rep"))%>%mutate(`0`=(rep1_0+rep2_0)/2,`1`=(rep1_1+rep2_1)/2,`2`=(rep1_2+rep2_2)/2)%>%select(hgnc,newid,cluster,ALE,tandem.new,`0`,`1`,`2`)
+
+write.table(pal.all.mean,"Actd.custom.meanPAL.acrossalltimepoints.txt",col.names = T,row.names = F,sep="\t",quote=F)
+
+```
+
+
+
+1) 0 vs 1 
+```{R}
+tmp=(pal.all)%>%mutate(x=(rep1_0+rep2_0)/2,y=(rep1_1+rep2_1)/2)%>%select(newid,x,y)
+str(tmp)
+tmp=tmp%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+id_=pal.all%>%
+    filter(`kspval.0.1.x`<0.2&`kspval.0.1.y`<0.2)%>%
+  filter((`dpal.0.1.x`>5&`dpal.0.1.y`>5)|(`dpal.0.1.x`<(-5)&`dpal.0.1.y`<(-5)))
+nrow(id_)
+id_%>%summarise(n_distinct(hgnc))
+
+cat("total number of transcript isoforms with PAL change gt 10 nt and ks.test FDR <0.01:",nrow(id_))
+id_%>%
+  mutate(change=ifelse((`dpal.0.1.x`>5&`dpal.0.1.y`>5),"UP",ifelse(`dpal.0.1.x`<(-5)&`dpal.0.1.y`<(-5), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%group_by(change)%>%summarise(n())
+
+t2=tmp%>%filter(newid %in% unlist(id_)) %>%select(x,y)#%>%filter(abs(y-x)>=10)
+```
+
+
+6.Draw a scatter plot with genes with PAL change labelled.
+```{R}
+pdf("F7D_0and1TEDseqscattorplot.new.pdf", width = 3, height = 3)
+ggplot(tmp, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=0.4) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="PAL.0h (nt)", y ="PAL.1h (nt)")+xlim(c(0,250))+ylim(c(0,250))+geom_abline(slope = 1, intercept = 6,linetype="dashed")+geom_abline(slope = 1, intercept = -6,linetype="dashed")+geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+ggtitle("TED-seq : 0h vs 1h")+#ggplot(t2, aes(y = y, x = x))+
+    geom_jitter(data = t2,aes(col ="indianred"), size=1)
+dev.off()
+```
+
+2) 0 vs 2
+```{R}
+tmp=(pal.all)%>%mutate(x=(rep1_0+rep2_0)/2,y=(rep1_2+rep2_2)/2)%>%select(newid,x,y)
+str(tmp)
+tmp=tmp%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+id_=pal.all%>%
+    filter(`kspval.0.2.x`<0.2&`kspval.0.2.y`<0.2)%>%
+  filter((`dpal.0.2.x`>5&`dpal.0.2.y`>5)|(`dpal.0.2.x`<(-5)&`dpal.0.2.y`<(-5)))
+nrow(id_)
+id_%>%summarise(n_distinct(hgnc))
+cat("total number of transcript isoforms with PAL change gt 10 nt and ks.test FDR <0.01:",nrow(id_))
+id_%>%
+  mutate(change=ifelse((`dpal.0.2.x`>5&`dpal.0.2.y`>5),"UP",ifelse(`dpal.0.2.x`<(-5)&`dpal.0.2.y`<(-5), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%group_by(change)%>%summarise(n())
+
+t2=tmp%>%filter(newid %in% unlist(id_)) %>%select(x,y)#%>%filter(abs(y-x)>=10)
+```
+
+
+6.Draw a scatter plot with genes with PAL change labelled.
+```{R}
+pdf("F7D_0and2TEDseqscattorplot.new.pdf", width = 3, height = 3)
+ggplot(tmp, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=0.4) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="PAL.0h (nt)", y ="PAL.2h (nt)")+xlim(c(0,250))+ylim(c(0,250))+geom_abline(slope = 1, intercept = 6,linetype="dashed")+geom_abline(slope = 1, intercept = -6,linetype="dashed")+geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+ggtitle("TED-seq : 0h vs 2h")+#ggplot(t2, aes(y = y, x = x))+
+    geom_jitter(data = t2,aes(col ="indianred"), size=1)
+dev.off()
+```
+
+
+2) 1 vs 2
+```{R}
+tmp=(pal.all)%>%mutate(x=(rep1_1+rep2_1)/2,y=(rep1_2+rep2_2)/2)%>%select(newid,x,y)
+str(tmp)
+tmp=tmp%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+
+id_=pal.all%>%
+    filter(`kspval.1.2.x`<0.2&`kspval.1.2.y`<0.2)%>%
+  filter((`dpal.1.2.x`>5&`dpal.1.2.y`>5)|(`dpal.1.2.x`<(-5)&`dpal.1.2.y`<(-5)))
+nrow(id_)
+id_%>%summarise(n_distinct(hgnc))
+cat("total number of transcript isoforms with PAL change gt 10 nt and ks.test FDR <0.01:",nrow(id_))
+id_%>%
+  mutate(change=ifelse((`dpal.1.2.x`>5&`dpal.1.2.y`>5),"UP",ifelse(`dpal.1.2.x`<(-5)&`dpal.1.2.y`<(-5), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%group_by(change)%>%summarise(n())
+
+t2=tmp%>%filter(newid %in% unlist(id_)) %>%select(x,y)#%>%filter(abs(y-x)>=10)
+```
+
+
+6.Draw a scatter plot with genes with PAL change labelled.
+```{R}
+pdf("F1D_1and2TEDseqscattorplot.new.pdf", width = 3, height = 3)
+ggplot(tmp, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=0.4) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="PAL.1h (nt)", y ="PAL.2h (nt)")+xlim(c(0,250))+ylim(c(0,250))+geom_abline(slope = 1, intercept = 6,linetype="dashed")+geom_abline(slope = 1, intercept = -6,linetype="dashed")+geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+ggtitle("TED-seq : 1h vs 2h")+#ggplot(t2, aes(y = y, x = x))+
+    geom_jitter(data = t2,aes(col ="indianred"), size=1)
+dev.off()
+```
+
+
+total number of transcript isoforms with PAL change gt 10 nt and ks.test FDR<0.1 for all samples.
+```{r}
+cat("total trascript isoforms tested:",all%>%summarise(n_distinct(newid))%>%unlist)
+
+id_1=pal.all%>%
+    filter(`kspval.0.1.x`<0.2&`kspval.0.1.y`<0.2)%>%
+  filter((`dpal.0.1.x`>5&`dpal.0.1.y`>5)|(`dpal.0.1.x`<(-5)&`dpal.0.1.y`<(-5)))%>%
+  mutate(change=ifelse((`dpal.0.1.x`>5&`dpal.0.1.y`>5),"UP","DOWN"))%>%
+  select(newid,hgnc,change)%>%mutate(comparison="0h - 1h")
+
+id_2=pal.all%>%
+    filter(`kspval.0.2.x`<0.2&`kspval.0.2.y`<0.2)%>%
+  filter((`dpal.0.2.x`>5&`dpal.0.2.y`>5)|(`dpal.0.2.x`<(-5)&`dpal.0.2.y`<(-5)))%>%
+  mutate(change=ifelse((`dpal.0.2.x`>5&`dpal.0.2.y`>5),"UP","DOWN"))%>%
+select(newid,hgnc,change)%>%mutate(comparison="0h - 2h")
+
+
+id_3=pal.all%>%
+    filter(`kspval.1.2.x`<0.2&`kspval.1.2.y`<0.2)%>%
+  filter((`dpal.1.2.x`>5&`dpal.1.2.y`>5)|(`dpal.1.2.x`<(-5)&`dpal.1.2.y`<(-5)))%>%
+  mutate(change=ifelse((`dpal.1.2.x`>5&`dpal.1.2.y`>5),"UP","DOWN"))%>%
+  select(newid,hgnc,change)%>%mutate(comparison="1h - 2h")
+
+
+
+all.id=list(id_1,id_2,id_3)%>%reduce(bind_rows)
+head(all.id)
+write.table(as.data.frame(all.id),"PALchange.transcriptid.list.txt",col.names = T,row.names = F,sep="\t",quote=F)
+
+
+
+write.table((all.id)%>%ungroup()%>%group_by(comparison,change)%>%
+  #group_by(change)%>%
+  summarise(n_distinct(newid)),"summaryOfPALchangeBWtwotimpoints.txt",col.names = T,row.names = F,sep="\t",quote=F)
+
+
+(all.id)%>%ungroup()%>%
+  #group_by(comparison,change)%>%
+  summarise(n_distinct(newid)) #1520 newid
+write.table((all.id)%>%ungroup()%>%
+  group_by(comparison)%>%
+  summarise(n_distinct(newid),n_distinct(hgnc)),"numberofnewid.hgnc.percomparison.txt",col.names = T,row.names = F,sep="\t",quote=F)
+ #1404 genes
+
+```
+
+
+
+
+
+gene with PAL increase between 0 and 1h
+FDR<0.2
+dPAL>5
+```{r}
+head(pal.all)
+write.table(pal.all%>%select(newid)%>%separate(newid,c("enst","next"),sep="\\.")%>%select(enst),"Genelist_ActD_background.txt",col.names = T,row.names = F,quote =F,sep="\t")
+gene01=id_1%>%filter(change=="UP")%>%separate(newid,c("enst","next"),sep="\\.")%>%select(enst)
+
+write.table(gene01,"Genelist_ActD_PALincrease.0to1h.txt",col.names = T,row.names = F,quote =F,sep="\t")
+
+gene02=id_2%>%filter(change=="UP")%>%separate(newid,c("enst","next"),sep="\\.")%>%select(enst)
+write.table(gene02,"Genelist_ActD_PALincrease.0to2h.txt",col.names = T,row.names = F,quote =F,sep="\t")
+
+gene12=id_3%>%filter(change=="UP")%>%separate(newid,c("enst","next"),sep="\\.")%>%select(enst)
+write.table(gene12,"Genelist_ActD_PALincrease.1to2h.txt",col.names = T,row.names = F,quote =F,sep="\t")
+```
+
+
+
+

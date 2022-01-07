@@ -1,0 +1,186 @@
+---
+title: "Step5_GO enrichment"
+author: "Yeonui+Kwak"
+date: "8/16/2020"
+output: html_document
+---
+
+
+
+1.Set a working directory
+```{R}
+getwd()
+setwd("/Users/yeonuikwak/Desktop/Publication_Mar/Final_Fig8/Rcode/step5")
+
+```
+
+2.Load the required packages,and set up colorcode.
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+#update.packages("dplyr")
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+
+#BiocManager::install("ComplexHeatmap")
+library(ComplexHeatmap)
+### Heatmap with Annotation
+library(dendextend)
+library("circlize")
+library("RColorBrewer")
+library(cluster)    # clustering algorithms
+#library(factoextra)
+
+#BiocManager::install("clusterProfiler", version = "3.8")
+#BiocManager::install("pathview")
+#install.packages("wordcloud")
+library(clusterProfiler)
+#library(wordcloud)
+
+
+#BiocManager::install(version = '3.8')
+#BiocManager::install("clusterProfiler", version = "3.8")
+#BiocManager::install("pathview")
+#BiocManager::install("enrichplot")
+
+#install.packages("dplyr")
+#install_version("dplyr", version = "0.8.5", repos = "http://cran.us.r-project.org")
+library(clusterProfiler)
+library(enrichplot)
+# we use ggplot2 to add x axis labels (ex: ridgeplot)
+library(ggplot2)
+
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+2. Prepare Input
+```{R}
+# reading all genes as background
+df = read.table("Genelist_ActD_background.txt", header=F)
+df$dummyfc=1
+
+# we want the log2 fold change 
+original_gene_list =df$dummyfc
+#original_gene_list <- df$log2FoldChange
+
+# name the vector
+names(original_gene_list) <- df$V1
+#names(original_gene_list) <- df$X
+
+# omit any NA values 
+gene_list<-na.omit(original_gene_list)
+
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+
+##reading the gene list in a certain cluster.
+df = read.table("Genelist_ActD_PALincrease.0to2h.txt", header=F)
+df$dummyfc=1
+# Exctract significant results (padj < 0.05)
+sig_genes_df = df
+
+# From significant results, we want to filter on log2fold change
+genes <- sig_genes_df$dummyfc
+
+# Name the vector
+names(genes) <- sig_genes_df$V1
+
+# omit NA values
+genes <- na.omit(genes)
+
+# filter on min log2fold change (log2FoldChange > 2)
+#genes <- names(genes)[abs(genes) > 2]
+genes <- names(genes)
+length(genes)
+length(gene_list)
+```
+
+```{R}
+# SET THE DESIRED ORGANISM HERE
+organism = "org.Hs.eg.db"
+#BiocManager::install(organism, character.only = TRUE)
+library(organism, character.only = TRUE)
+keytypes(org.Hs.eg.db)
+```
+
+Create the object
+```{R}
+
+
+go_enrich1.2 <- enrichGO(gene = genes,
+                      universe = names(gene_list),
+                      OrgDb = organism, 
+                      keyType = 'ENSEMBLTRANS',
+                      readable = T,
+                      ont = "BP",
+                      pAdjustMethod = "BH",
+                      pvalueCutoff = 0.2)
+```
+
+
+#Upset Plot
+Emphasizes the genes overlapping among different gene sets.
+```{R}
+#BiocManager::install("enrichplot")
+library(enrichplot)
+pdf("Fig7_GO_UPSETplot.pdf")
+upsetplot(go_enrich1.2)
+dev.off()
+```
+
+
+#Barplot
+```{R}
+pdf("Fig4E_GO_barplot.pdf",height=3,width=5)
+barplot(go_enric2, 
+        drop = TRUE, 
+        showCategory = 10, 
+        title = "GO Biological Pathways",
+        font.size = 8)
+
+dev.off()
+#Dotplot
+pdf("Fig4E_GO_DOTplot.pdf",height=5,width=8)
+dotplot(go_enric2,showCategory=10)
+dev.off()
+
+
+```
+
+#Encrichment map:
+Enrichment map organizes enriched terms into a network with edges connecting overlapping gene sets. In this way, mutually overlapping gene sets are tend to cluster together, making it easy to identify functional modules.
+```{R}
+pdf("Fig4E_enrichmentmap.pdf",width=5.5,height=4.5)
+emapplot(go_enric2)
+dev.off()
+```
+
+#Enriched GO induced graph:
+```{R}
+pdf("go.pdf")
+goplot(go_enrich, showCategory = 4)
+dev.off()
+```
+
+#Category Netplot
+The cnetplot depicts the linkages of genes and biological concepts (e.g. GO terms or KEGG pathways) as a network (helpful to see which genes are involved in enriched pathways and genes that may belong to multiple annotation categories).
+```{R}
+# categorySize can be either 'pvalue' or 'geneNum'
+pdf("Fig4E_GO_CategoryNetplot.pdf",width=6,height=4)
+cnetplot(go_enrich, categorysize="pvalue", foldChange=F,showCategory = 10)
+dev.off()
+```
+
+
+

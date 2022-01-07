@@ -1,0 +1,133 @@
+---
+title: "PRO-seq data readcount table"
+author: "Yeonui+Kwak"
+date: "8/17/2020"
+output: html_document
+---
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig8/Rcode/ZFP36/rawdata")
+```
+
+
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(purrr)
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+
+
+#CDF
+
+library(gridExtra)
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(10)[c(3,5,7)] 
+#col = yk.col(5)[c(1,2,4,5)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(0.3, 0.9) +
+  ylab("Cumulative fraction")
+```
+
+
+3. Load PRO-seq readcount tables.
+
+Rep1 readcount table new (2020.1.23)
+```{R}
+p0<-read.csv("THP1.d.0.txt",sep="\t",header=T, stringsAsFactors = F)
+p1<-read.csv("THP1.d.1.txt",sep="\t",header=T, stringsAsFactors = F)
+p2<-read.csv("THP1.d.2.txt",sep="\t",header=T, stringsAsFactors = F)
+p4<-read.csv("THP1.d.4.txt",sep="\t",header=T, stringsAsFactors = F)
+```
+4. Calculate RPM value.
+```{R}
+len<-read.csv("Gene_length.tmp",sep="\t",header=F, stringsAsFactors = F)
+```
+
+```{R}
+p=bind_rows(p0,p1,p2,p4)
+p=p%>%mutate("sample"=c(rep(0,nrow(p0)),rep(1,nrow(p1)),rep(2,nrow(p2)),rep(4,nrow(p4))))%>%rename(PolII_Density=gb)
+p=p%>%dplyr::select(-pp)%>%distinct(id,sample,.keep_all=TRUE)%>%spread(sample,PolII_Density)
+p=p[rowSums(p[,2:5])!=0,]
+p=p%>%filter(p$id %in% len$V1)
+p[p$id=="ENST00000449264.2",]
+write.table(p,"proseq_readcount_rep1.txt", quote=F,row.names=F,col.names=F)
+
+colSums(p[,2:5]) # 7891653  8145626 12823708 11294135 #REP2:430698 3424359 4219780 3630108
+```
+```{R}
+p[,2:5]=sweep((p[,2:5]), 2,colSums(p[,2:5]) , "/")
+p[,2:5]=p[,2:5]*1000000
+colSums(p[2:5])
+write.table(p,"proseq_readcount_rep1_rpkm.txt", quote=F,row.names=F,col.names=F)
+```
+
+Repeat step 3 and 4 for replicate 2 samples.
+```{R}
+p0<-read.csv("THP1.rep2.d.0.txt",sep="\t",header=T, stringsAsFactors = F)
+p1<-read.csv("THP1.rep2.d.1.txt",sep="\t",header=T, stringsAsFactors = F)
+p2<-read.csv("THP1.rep2.d.2.txt",sep="\t",header=T, stringsAsFactors = F)
+p4<-read.csv("THP1.rep2.d.4.txt",sep="\t",header=T, stringsAsFactors = F)
+```
+
+```{R}
+p=bind_rows(p0,p1,p2,p4)
+
+p=p%>%mutate("sample"=c(rep(0,nrow(p0)),rep(1,nrow(p1)),rep(2,nrow(p2)),rep(4,nrow(p4))))%>%rename(PolII_Density=gb)
+tmp=as.tibble(p)
+colnames(tmp)
+p=tmp[,c(1,2,4)]%>%distinct(id,sample,.keep_all=TRUE)%>%spread(sample,PolII_Density)
+p=p[rowSums(p[,2:5])!=0,]
+p=p%>%filter(p$id %in% len$V1)
+p[p$id=="ENST00000449264.2",]
+write.table(p,"proseq_readcount_rep2.txt", quote=F,row.names=F,col.names=F)
+
+colSums(p[,2:5]) # 7891653  8145626 12823708 11294135 #REP2:430698 3424359 4219780 3630108
+```
+```{R}
+p[,2:5]=sweep((p[,2:5]), 2,colSums(p[,2:5]) , "/")
+p[,2:5]=p[,2:5]*1000000
+colSums(p[2:5])
+write.table(p,"proseq_readcount_rep2_rpkm.txt", quote=F,row.names=F,col.names=F)
+str(p)
+```
+5. Load Rep1 RPKM and Rep2 RPKM 
+```{R}
+rep1<-read.table("proseq_readcount_rep1_rpkm.txt",header = F,stringsAsFactors = F)
+rep2<-read.table("proseq_readcount_rep2_rpkm.txt",header = F,stringsAsFactors=F)
+colnames(rep1)=c("id","rep1_0","rep1_1","rep1_2","rep1_4")
+colnames(rep2)=c("id","rep2_0","rep2_1","rep2_2","rep2_4")
+str(rep2)
+pro=rep1%>%inner_join(rep2,by="id")
+pro_df=pro%>%gather(sample,rpkm,-id)%>%separate(sample,c("replicate","time"),sep ="_" )%>%
+  group_by(id,time)%>%summarise(mean =mean(rpkm))%>%
+  ungroup()%>% spread(time,mean)
+str(pro_df)
+write.table(pro_df,"finalPRO_RPKM.txt",row.names = F,col.names = T,quote=F, sep="\t")
+```
+Convert RPKM to log2(meanRPKM+1)
+```{R}
+#log2(RPKM)
+#pro_df=NULL
+pro_df=pro_df%>% gather(sample,rpkm,-id)%>%mutate(rpkm=log2(rpkm+1))%>%spread(sample,rpkm)%>%distinct()
+write.table(pro_df,"finalPRO_log2RPKM.txt",row.names = F,col.names = T,quote=F, sep="\t")
+```
+7. Check example genes
+```{r}
+pro_df[pro_df$id=="ENST00000449264.2",]
+rep2%>%filter(grepl("ENST00000449264",id))
+```

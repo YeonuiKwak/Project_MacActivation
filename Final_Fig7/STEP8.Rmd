@@ -1,0 +1,683 @@
+---
+title: "Step8_ActD_association between dRNA and dPAL"
+author: "Yeonui+Kwak"
+date: "8/17/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig8/Rcode/step8")
+```
+
+
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(purrr)
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+
+
+#CDF
+
+library(gridExtra)
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(10)[c(3,5,7)] 
+#col = yk.col(5)[c(1,2,4,5)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(0.3, 0.9) +
+  ylab("Cumulative fraction")
+```
+
+
+
+3. Load sample
+```{R}
+pal<-read.table("Actd.custom.meanPAL.acrossalltimepoints.txt",header=T, stringsAsFactors = F)
+pal=pal%>%dplyr::select(hgnc,newid,X0,X1,X2)
+colnames(pal)=c("hgnc","newid",paste("TED",c(0,1,2),sep = "_"))
+head(pal)
+#pal=pal%>%
+  #separate(newid,c("id","refpos","CPSpos"),sep=":",remove = F)%>%unite("newid2",c(id,CPSpos),sep=":",remove=F)%>%
+  #rename(newid_old=newid)%>%
+  #rename(newid=newid2)%>%
+  #dplyr::dplyr::select(-hgnc)
+head(rna)
+rna<-read.table("temporal3pseq_n10603.ALE.tandem.tandemcluster.txt",header=T, stringsAsFactors = F)
+rna%>%separate(cluster,c("hgnc","a","b"),sep=":")%>%filter(hgnc=="ZFP36")
+#rna<-read.table("3pseq.all.temporalCPSsamples.ALE.tandemUTR.annotation.2020.06.15.txt",header=T, stringsAsFactors = F)
+rna=rna%>%dplyr::select(-cps.ratio.perhgnc)%>%arrange(newid,time)%>%distinct_at(vars(newid,time),.keep_all = T)
+rna[19745:19750,]
+rna=rna%>%
+  #separate(CPSid,c("chr","CPSpos"),sep=":",remove=F)%>%unite("newid",c(id,CPSpos),sep = ":")%>%
+  dplyr::select(newid,readcount,time,id)%>%spread(time,readcount)
+head(rna)
+colnames(rna)=c("newid","id",paste("CPS",c(0,1,2,4),sep = "_"))
+
+txn<-read.table("finalPRO_log2RPKM.txt",sep="\t",header=T, stringsAsFactors = F)
+colnames(txn)=c("id",paste("PRO",c(0,1,2,4),sep = "_"))
+colnames(pal);colnames(rna);colnames(txn)
+all=pal%>%inner_join(rna,by="newid")%>%inner_join(txn,by="id")
+cat("total number of genes in all three datasets:",nrow(all))
+head(all)
+write.table(all,"PRO_TED_CPS.readcounttable.actD.txt",col.names = T,row.names = F,sep="\t",quote = F) 
+#cps,ted custom version.
+
+```
+
+```{R}
+final<-read.table("PRO_TED_CPS.readcounttable.actD.txt",sep="\t",header=T,stringsAsFactors = F)
+head(final)
+final%>%filter(hgnc=="ZFP36")
+```
+
+4.1 General association between dPAL and dRNA
+
+
+Data manipulation:Group by dPAL
+0.1
+```{R}
+
+# set up cut-off values 
+dpro.breaks <- seq(-5,5,1)
+
+sampln_=final%>%
+  mutate(dPRO=PRO_1-PRO_0)%>%
+  mutate("dCPS_0and1"=log2((CPS_1+1)/(CPS_0+1)))%>%
+  mutate("dTED_0and1"=TED_1-TED_0)%>%
+  dplyr::select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_0and1>=(5),"PAL_UP",ifelse(dTED_0and1<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%summarise(sum=n())%>%ungroup()%>%
+  complete(dTED_group,nesting(dPRO_bin),fill =list(sum=0))%>%
+  filter(dTED_group=="PAL_UP")%>%
+  ungroup()%>%dplyr::select(sum,dPRO_bin)
+
+nested_sample=final%>%ungroup()%>%
+  mutate(dPRO=PRO_1-PRO_0)%>%
+  mutate("dCPS_0and1"=log2((CPS_1+1)/(CPS_0+1)))%>%
+  mutate("dTED_0and1"=TED_1-TED_0)%>%
+  dplyr::select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_0and1>=(5),"PAL_UP",ifelse(dTED_0and1<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%
+  nest()%>%
+  ungroup()%>%
+  inner_join(sampln_,by="dPRO_bin")%>%ungroup()
+
+sampled<-nested_sample%>%
+  mutate(samp=map2(data,sum,sample_n))
+
+sample=sampled%>%dplyr::select(-data)%>%unnest(samp)
+sample01=sample
+sample%>%group_by(dTED_group)%>%summarise(n())
+ks.test(sample$dCPS_0and1[sample$dTED_group=="PAL_UP"],sample$dCPS_0and1[sample$dTED_group=="PAL_CTRL"])
+#0.00504
+```
+
+#Distribution of dTxn among TED-group
+```{R}
+pdf("F5_ActD_General.dTXN distribution.0.1.pdf",width=3.5,height=3)
+ggplot(sample,aes(x=dTED_group,y=dPRO,col=dPRO_bin))+geom_quasirandom(size=0.2)+scale_colour_manual(values=yk.col(7)[1:7])+ylab(expression(italic(Delta)*"TXN (PRO-seq log2 FC)"))+labs(title=expression("0h"%->%"1h"))+theme_bw()+xlab("Post-transcriptional PAL change")
+dev.off()
+```
+5. Set CDF color (N=3)
+```{R}
+col = yk.col(9)[c(5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-2.5,2.5) +
+  ylab("Cumulative fraction")
+```
+
+6. Draw CDF plot for transcripts : dPAL and dRNA association between 0h and 1h.
+```{R}
+pdf("F5_ActD_General_xaxis:dRNA_0.1pdf",width=4,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS_0and1,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("0h"%->%"1h")) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression("Post-TXN "*italic(Delta)*"PAL"))+
+  scale_color_manual(labels = c("CTRL", "UP"),values=col)
+dev.off()
+```
+
+
+2. 0 VS 2
+
+```{R}
+# set up cut-off values 
+
+sampln_=final%>%ungroup()%>%
+  mutate(dPRO=PRO_2-PRO_0)%>%
+  mutate("dCPS"=log2((CPS_2+1)/(CPS_0+1)))%>%
+  mutate("dTED"=TED_2-TED_0)%>%
+  dplyr::select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED>=(5),"PAL_UP",ifelse(dTED<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%summarise(sum=n())%>%ungroup()%>%
+  complete(dTED_group,nesting(dPRO_bin),fill =list(sum=0))%>%
+  filter(dTED_group=="PAL_UP")%>%
+  ungroup()%>%dplyr::select(sum,dPRO_bin)
+
+
+nested_sample=final%>%ungroup()%>%
+  mutate(dPRO=PRO_2-PRO_0)%>%
+  mutate("dCPS"=log2((CPS_2+1)/(CPS_0+1)))%>%
+  mutate("dTED"=TED_2-TED_0)%>%
+  dplyr::select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED>=(5),"PAL_UP",ifelse(dTED<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%
+  nest()%>%
+  ungroup()%>%
+  inner_join(sampln_,by="dPRO_bin")%>%ungroup()
+
+sampled<-nested_sample%>%
+  mutate(samp=map2(data,sum,sample_n))
+
+sample=sampled%>%dplyr::select(-data)%>%unnest(samp)
+
+
+ks.test(sample$dCPS[sample$dTED_group=="PAL_UP"],sample$dCPS[sample$dTED_group=="PAL_CTRL"])
+warnings()#p-value = 0.7698
+sample02=sample
+```
+
+#Distribution of dTxn among TED-group
+```{R}
+pdf("F5_ActD_General.dTXN distribution0.2.pdf",width=3.5,height=3)
+ggplot(sample,aes(x=dTED_group,y=dPRO,col=dPRO_bin))+geom_quasirandom(size=0.2)+scale_colour_manual(values=yk.col(10)[1:10])+ylab(expression(italic(Delta)*"TXN (PRO-seq log2 FC)"))+labs(title=expression("0h"%->%"2h"))+theme_bw()+xlab("Post-transcriptional PAL change")
+dev.off()
+```
+
+
+
+5. Set CDF color (N=3)
+```{R}
+col = yk.col(9)[c(5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-3,3) +
+  ylab("Cumulative fraction")
+```
+
+6. Draw CDF plot for transcripts : dPAL and dRNA association.
+```{R}
+pdf("F5_ActD_General_xaxis:dRNA_0.2.dpalgt6pdf",width=4,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("0h"%->%"2h")) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression("Post-TXN "*italic(Delta)*"PAL"))+
+  scale_color_manual(labels = c("CTRL", "UP"),values=col)
+dev.off()
+```
+
+
+1 VS 2
+
+```{R}
+
+sampln_=final%>%ungroup()%>%
+  mutate(dPRO=PRO_2-PRO_1)%>%
+  mutate("dCPS"=log2((CPS_2+1)/(CPS_1+1)))%>%
+  mutate("dTED"=TED_2-TED_1)%>%
+  dplyr::select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED>=(6),"PAL_UP",ifelse(dTED<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%summarise(sum=n())%>%ungroup()%>%
+  complete(dTED_group,nesting(dPRO_bin),fill =list(sum=0))%>%
+  filter(dTED_group=="PAL_UP")%>%
+  ungroup()%>%dplyr::select(sum,dPRO_bin)
+
+
+nested_sample=final%>%ungroup()%>%
+  mutate(dPRO=PRO_2-PRO_1)%>%
+  mutate("dCPS"=log2((CPS_2+1)/(CPS_1+1)))%>%
+  mutate("dTED"=TED_2-TED_1)%>%
+  dplyr::select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED>=(6),"PAL_UP",ifelse(dTED<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%
+  nest()%>%
+  ungroup()%>%
+  inner_join(sampln_,by="dPRO_bin")%>%ungroup()
+warnings()
+sampled<-nested_sample%>%
+  mutate(samp=map2(data,sum,sample_n))
+
+sample=sampled%>%dplyr::select(-data)%>%unnest(samp)
+
+
+ks.test(sample$dCPS[sample$dTED_group=="PAL_UP"],sample$dCPS[sample$dTED_group=="PAL_CTRL"])
+warnings()0.2305
+sample12=sample
+```
+
+#Distribution of dTxn among TED-group
+```{R}
+pdf("F5_ActD_General.dTXN distribution1.2.pdf",width=3.5,height=3)
+ggplot(sample,aes(x=dTED_group,y=dPRO,col=dPRO_bin))+geom_quasirandom(size=0.2)+scale_colour_manual(values=yk.col(5)[1:4])+ylab(expression(italic(Delta)*"TXN (PRO-seq log2 FC)"))+labs(title=expression("1h"%->%"2h"))+theme_bw()+xlab("Post-transcriptional PAL change")+labs(col=expression(italic(Delta)*"TXN bins"))
+dev.off()
+```
+
+
+5. Set CDF color (N=3)
+```{R}
+col = yk.col(9)[c(5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-2,2) +
+  ylab("Cumulative fraction")
+```
+
+6. Draw CDF plot for transcripts : dPAL and dRNA association between 0h and 4h.
+```{R}
+pdf("F5_ActD_General_xaxis:dRNA_1.2.pdf",width=4,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("1h"%->%"2h")) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression("Post-TXN "*italic(Delta)*"PAL"))+
+  scale_color_manual(labels = c("CTRL","UP"),values=col)
+dev.off()
+```
+
+
+#General. Save Cytoplasmic target gene id vs non-target gene ids
+```{R}
+write.table(sample01,"sampled.ActD_0.1h.PALincreasegt6.txt",sep="\t",col.names = T,row.names = F,quote=F)
+write.table(sample02,"sampled.ActD_0.2h.PALincreasegt6.txt",sep="\t",col.names = T,row.names = F,quote=F)
+write.table(sample12,"sampled.ActD_1.2h.PALincreasegt6.txt",sep="\t",col.names = T,row.names = F,quote=F)
+```
+
+
+
+
+4.2. For the genes with minimal transcriptional change.
+
+Data manipulation:Group by dPAL
+0.1
+```{R}
+
+# set up cut-off values 
+dpro.breaks <- seq(-0.5,0.5,0.1)
+
+sampln_=final%>%
+  mutate(dPRO=PRO_1-PRO_0)%>%
+  filter(abs(PRO_1-PRO_0)<0.5)%>%
+  mutate("dCPS_0and1"=log2((CPS_1+1)/(CPS_0+1)))%>%
+  mutate("dTED_0and1"=TED_1-TED_0)%>%
+  dplyr::select(newid,newid_old,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_0and1>=(6),"PAL_UP",ifelse(dTED_0and1<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%summarise(sum=n())%>%ungroup()%>%
+  complete(dTED_group,nesting(dPRO_bin),fill =list(sum=0))%>%
+  filter(dTED_group=="PAL_UP")%>%
+  ungroup()%>%dplyr::select(sum,dPRO_bin)
+
+nested_sample=final%>%ungroup()%>%
+  mutate(dPRO=PRO_1-PRO_0)%>%filter(abs(PRO_1-PRO_0)<0.5)%>%
+  mutate("dCPS_0and1"=log2((CPS_1+1)/(CPS_0+1)))%>%
+  mutate("dTED_0and1"=TED_1-TED_0)%>%
+  dplyr::select(newid,newid_old,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_0and1>=(6),"PAL_UP",ifelse(dTED_0and1<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%
+  nest()%>%
+  ungroup()%>%
+  inner_join(sampln_,by="dPRO_bin")%>%ungroup()
+
+sampled<-nested_sample%>%
+  mutate(samp=map2(data,sum,sample_n))
+
+sample=sampled%>%dplyr::select(-data)%>%unnest(samp)
+sample01=sample
+
+ks.test(sample$dCPS_0and1[sample$dTED_group=="PAL_UP"],sample$dCPS_0and1[sample$dTED_group=="PAL_CTRL"])
+
+```
+
+#Distribution of dTxn among TED-group
+```{R}
+pdf("F5_ActD_MinimalTxnChange.dTXN distribution.0.1.pdf",width=3.5,height=3)
+ggplot(sample,aes(x=dTED_group,y=dPRO,col=dPRO_bin))+geom_quasirandom(size=0.2)+scale_colour_manual(values=yk.col(10)[1:10])+ylab(expression(italic(Delta)*"TXN (PRO-seq log2 FC)"))+labs(title=expression("0h"%->%"1h"))+theme_bw()+xlab("Post-transcriptional PAL change")
+dev.off()
+```
+5. Set CDF color (N=3)
+```{R}
+col = yk.col(9)[c(5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-2,2) +
+  ylab("Cumulative fraction")
+```
+
+6. Draw CDF plot for transcripts : dPAL and dRNA association between 0h and 1h.
+```{R}
+pdf("F5_ActD_MinimalTxnChange_xaxis:dRNA_0.1.dpalgt6pdf",width=4,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS_0and1,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("0h"%->%"1h")) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression("Post-TXN "*italic(Delta)*"PAL"))+
+  scale_color_manual(labels = c("CTRL", "UP"),values=col)
+dev.off()
+```
+
+
+2. 0 VS 2
+
+```{R}
+# set up cut-off values 
+dpro.breaks <- seq(-0.5,0.5,0.1)
+
+
+sampln_=final%>%ungroup()%>%
+  mutate(dPRO=PRO_2-PRO_0)%>%
+  filter(abs(PRO_2-PRO_0)<0.5&abs(PRO_1-PRO_0)<0.5)%>%
+  mutate("dCPS"=log2((CPS_2+1)/(CPS_0+1)))%>%
+  mutate("dTED"=TED_2-TED_0)%>%
+  dplyr::select(newid,newid_old,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED>=(6),"PAL_UP",ifelse(dTED<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%summarise(sum=n())%>%ungroup()%>%
+  complete(dTED_group,nesting(dPRO_bin),fill =list(sum=0))%>%
+  filter(dTED_group=="PAL_UP")%>%
+  ungroup()%>%dplyr::select(sum,dPRO_bin)
+
+
+nested_sample=final%>%ungroup()%>%
+  mutate(dPRO=PRO_2-PRO_0)%>%
+  filter(abs(PRO_2-PRO_0)<0.5&abs(PRO_1-PRO_0)<0.5)%>%
+  mutate("dCPS"=log2((CPS_2+1)/(CPS_0+1)))%>%
+  mutate("dTED"=TED_2-TED_0)%>%
+  dplyr::select(newid,newid_old,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED>=(6),"PAL_UP",ifelse(dTED<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%
+  nest()%>%
+  ungroup()%>%
+  inner_join(sampln_,by="dPRO_bin")%>%ungroup()
+
+sampled<-nested_sample%>%
+  mutate(samp=map2(data,sum,sample_n))
+
+sample=sampled%>%dplyr::select(-data)%>%unnest(samp)
+sample02=sample
+
+ks.test(sample$dCPS[sample$dTED_group=="PAL_UP"],sample$dCPS[sample$dTED_group=="PAL_CTRL"])
+warnings()
+```
+
+#Distribution of dTxn among TED-group
+```{R}
+pdf("F5_ActD_MinimalTxnChange.dTXN distribution0.2.pdf",width=3.5,height=3)
+ggplot(sample,aes(x=dTED_group,y=dPRO,col=dPRO_bin))+geom_quasirandom(size=0.2)+scale_colour_manual(values=yk.col(10)[1:10])+ylab(expression(italic(Delta)*"TXN (PRO-seq log2 FC)"))+labs(title=expression("0h"%->%"2h"))+theme_bw()+xlab("Post-transcriptional PAL change")
+dev.off()
+```
+Time-course TXN change: Line graph
+```{R}
+sample2=final%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_0and2"=PRO_4-PRO_2)%>%
+  inner_join(sample,by="newid")%>%
+  ungroup()%>%
+  mutate(.PRO_0=(PRO_0-PRO_0))%>%
+  mutate(.PRO_1=(PRO_1-PRO_0))%>%
+  mutate(.PRO_2=(PRO_2-PRO_0))%>%
+  gather("time","txn",starts_with(".PRO_"))%>%
+  separate("time",c("pro","prohour"),sep="_")%>%dplyr::select(-pro)%>%mutate(prohour=as.numeric(prohour))
+
+df_summary=sample2%>%group_by(prohour,dTED_group)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+#df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+#df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_lower <- df_summary$mean + df_summary$sd
+df_summary$CI_upper <- df_summary$mean - df_summary$sd
+
+pdf("F5_TXN NC_PRO-seq_time-course0.2_pal0.2.pdf", width = 5, heigh=3)
+ggplot(df_summary, aes(x=prohour, y=mean)) +
+   geom_line(data=df_summary, aes(x=prohour, y=mean,group=dTED_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dTED_group,fill=dTED_group), alpha=0.2)+scale_fill_manual(values=col)+theme_bw()+labs( title =expression("TXN: 0 h"%->%"2 h"))+
+  ylab("mean(Transcription)±sd")+ylim(c(-1.5,1.5))+xlab("hour")+labs(fill = expression("Post-TXN " *Delta*"PAL"))+facet_grid(.~dTED_group)+ scale_x_continuous(breaks=c(0,1,2))+scale_fill_manual(labels = c("CTRL","UP"),values=col)
+dev.off()
+```
+
+5. Set CDF color (N=3)
+```{R}
+col = yk.col(9)[c(5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-3,3) +
+  ylab("Cumulative fraction")
+```
+
+6. Draw CDF plot for transcripts : dPAL and dRNA association.
+```{R}
+pdf("F5_ActD_MinimalTxnChange_xaxis:dRNA_0.2.dpalgt6.2pdf",width=4.5,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS,
+                col = dTED_group),
+            geom = "step") +
+  #labs( title =expression("0h"%->%"2h")) +
+  xlab(expression(italic(Delta)*"RNA"*"(0h"%->%"2h)"))+labs(col=expression("Post-TXN "*italic(Delta)*"PAL"*"(0h"%->%"2h)"))+
+  scale_color_manual(labels = c("CTRL", "UP"),values=col)
+dev.off()
+```
+1 VS 2
+
+```{R}
+# set up cut-off values 
+dpro.breaks <- seq(-0.5,0.5,0.1)
+
+
+sampln_=final%>%ungroup()%>%
+  mutate(dPRO=PRO_2-PRO_1)%>%
+  filter(abs(PRO_2-PRO_1)<0.5)%>%
+  mutate("dCPS"=log2((CPS_2+1)/(CPS_1+1)))%>%
+  mutate("dTED"=TED_2-TED_1)%>%
+  dplyr::select(newid,newid_old,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED>=(6),"PAL_UP",ifelse(dTED<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%summarise(sum=n())%>%ungroup()%>%
+  complete(dTED_group,nesting(dPRO_bin),fill =list(sum=0))%>%
+  filter(dTED_group=="PAL_UP")%>%
+  ungroup()%>%dplyr::select(sum,dPRO_bin)
+
+
+nested_sample=final%>%ungroup()%>%
+  mutate(dPRO=PRO_2-PRO_1)%>%filter(abs(PRO_2-PRO_1)<0.5)%>%
+  mutate("dCPS"=log2((CPS_2+1)/(CPS_1+1)))%>%
+  mutate("dTED"=TED_2-TED_1)%>%
+  dplyr::select(newid,newid_old,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED>=(6),"PAL_UP",ifelse(dTED<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%
+  nest()%>%
+  ungroup()%>%
+  inner_join(sampln_,by="dPRO_bin")%>%ungroup()
+warnings()
+sampled<-nested_sample%>%
+  mutate(samp=map2(data,sum,sample_n))
+
+sample=sampled%>%dplyr::select(-data)%>%unnest(samp)
+
+
+ks.test(sample$dCPS[sample$dTED_group=="PAL_UP"],sample$dCPS[sample$dTED_group=="PAL_CTRL"])
+warnings()
+sample12=sample
+```
+
+#Distribution of dTxn among TED-group
+```{R}
+pdf("F5_ActD_MinimalTxnChange.dTXN distribution1.2.pdf",width=3.5,height=3.5)
+ggplot(sample,aes(x=dTED_group,y=dPRO,col=dPRO_bin))+geom_quasirandom(size=0.2)+scale_colour_manual(values=yk.col(10)[1:10])+ylab(expression(italic(Delta)*"TXN (PRO-seq log2 FC)"))+labs(title=expression("1h"%->%"2h"))+theme_bw()+xlab("Post-transcriptional PAL change")+labs(col=expression(italic(Delta)*"TXN bins"))
+dev.off()
+```
+
+
+5. Set CDF color (N=3)
+```{R}
+col = yk.col(9)[c(5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-2,2) +
+  ylab("Cumulative fraction")
+```
+
+6. Draw CDF plot for transcripts : dPAL and dRNA association between 0h and 4h.
+```{R}
+pdf("F5_ActD_MinimalTxnChange_xaxis:dRNA_1.2.dpalgt6.pdf",width=4,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("1h"%->%"2h")) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression("Post-TXN "*italic(Delta)*"PAL"))+
+  scale_color_manual(labels = c("CTRL","UP"),values=col)
+dev.off()
+```
+
+
+ 0h vs 1h PAL association with 1h vs 2h RNA association under minimal txn change
+```{R}
+dpro.breaks <- seq(-0.5,0.5,0.1)
+
+
+sampln_=final%>%ungroup()%>%
+  mutate(dPRO=PRO_2-PRO_0)%>%
+  filter(abs(PRO_2-PRO_0)<0.5&abs(PRO_1-PRO_0)<0.5)%>%
+  mutate("dCPS"=log2((CPS_2+1)/(CPS_0+1)))%>%
+  mutate("dTED"=TED_1-TED_0)%>%
+  dplyr::select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED>=(6),"PAL_UP",ifelse(dTED<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%summarise(sum=n())%>%ungroup()%>%
+  complete(dTED_group,nesting(dPRO_bin),fill =list(sum=0))%>%
+  filter(dTED_group=="PAL_UP")%>%
+  ungroup()%>%dplyr::select(sum,dPRO_bin)
+
+
+nested_sample=final%>%ungroup()%>%
+  mutate(dPRO=PRO_2-PRO_0)%>%
+  filter(abs(PRO_2-PRO_0)<0.5&abs(PRO_1-PRO_0)<0.5)%>%
+  mutate("dCPS"=log2((CPS_2+1)/(CPS_0+1)))%>%
+  mutate("dTED"=TED_1-TED_0)%>%
+  dplyr::select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED>=(6),"PAL_UP",ifelse(dTED<1,"PAL_CTRL","NA")))%>%filter(dTED_group!="NA")%>%
+   #binning
+  mutate(dPRO_bin=cut(dPRO,breaks=dpro.breaks))%>%
+  group_by(dTED_group,dPRO_bin)%>%
+  nest()%>%
+  ungroup()%>%
+  inner_join(sampln_,by="dPRO_bin")%>%ungroup()
+
+sampled<-nested_sample%>%
+  mutate(samp=map2(data,sum,sample_n))
+
+sample=sampled%>%dplyr::select(-data)%>%unnest(samp)
+
+
+ks.test(sample$dCPS[sample$dTED_group=="PAL_UP"],sample$dCPS[sample$dTED_group=="PAL_CTRL"])
+warnings()
+
+
+pdf("F5_ActD_MinimalTxnChange.dTXN distribution_temporalorder.0.2.pdf",width=3.5,height=3)
+ggplot(sample,aes(x=dTED_group,y=dPRO,col=dPRO_bin))+geom_quasirandom(size=0.2)+scale_colour_manual(values=yk.col(10)[1:10])+ylab(expression(italic(Delta)*"TXN (PRO-seq log2 FC)"))+labs(title=expression("0h"%->%"2h"))+theme_bw()+xlab("Post-transcriptional PAL change")+labs(col=expression(italic(Delta)*"TXN bins"))
+dev.off()
+
+
+
+
+
+
+pdf("F5_ActD_0.1PALto0.2RNA.pdf",width=4.5,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS,
+                col = dTED_group),
+            geom = "step") +
+  #labs( title =expression("0h"%->%"1h")) +
+  xlab(expression(italic(Delta)*"RNA"*"(0h"%->%"2h)"))+labs(col=expression("Post-TXN "*italic(Delta)*"PAL"*"(0h"%->%"1h)"))+
+  scale_color_manual(labels = c("CTRL","UP"),values=col)
+dev.off()
+```
+
+Time-course TXN change: Line graph
+```{R}
+sample2=final%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_0and2"=PRO_4-PRO_2)%>%
+  inner_join(sample,by="newid")%>%
+  ungroup()%>%
+  mutate(.PRO_0=(PRO_0-PRO_0))%>%
+  mutate(.PRO_1=(PRO_1-PRO_0))%>%
+  mutate(.PRO_2=(PRO_2-PRO_0))%>%
+  gather("time","txn",starts_with(".PRO_"))%>%
+  separate("time",c("pro","prohour"),sep="_")%>%dplyr::select(-pro)%>%mutate(prohour=as.numeric(prohour))
+
+df_summary=sample2%>%group_by(prohour,dTED_group)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+#df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+#df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_lower <- df_summary$mean + df_summary$sd
+df_summary$CI_upper <- df_summary$mean - df_summary$sd
+
+pdf("F5_TXN NC_PRO-seq_time-course0.2.pdf", width = 5, heigh=3)
+ggplot(df_summary, aes(x=prohour, y=mean)) +
+   geom_line(data=df_summary, aes(x=prohour, y=mean,group=dTED_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dTED_group,fill=dTED_group), alpha=0.2)+scale_fill_manual(values=col)+theme_bw()+labs( title =expression("TXN: 0 h"%->%"2 h"))+
+  ylab("mean(Transcription)±sd")+ylim(c(-1.5,1.5))+xlab("hour")+labs(fill = expression("Post-TXN " *Delta*"PAL"))+facet_grid(.~dTED_group)+ scale_x_continuous(breaks=c(0,1,2))+scale_fill_manual(labels = c("CTRL","UP"),values=col)
+dev.off()
+```
+
+#Minimapl dTXN. Save Cytoplasmic target gene id vs non-target gene ids
+```{R}
+write.table(sample01,"minimaldTXN_sampled.ActD_0.1h.PALincreasegt6.txt",sep="\t",col.names = T,row.names = F,quote=F)
+write.table(sample02,"minimaldTXN_sampled.ActD_0.2h.PALincreasegt6.txt",sep="\t",col.names = T,row.names = F,quote=F)
+write.table(sample12,"minimaldTXN_sampled.ActD_1.2h.PALincreasegt6.txt",sep="\t",col.names = T,row.names = F,quote=F)
+```
