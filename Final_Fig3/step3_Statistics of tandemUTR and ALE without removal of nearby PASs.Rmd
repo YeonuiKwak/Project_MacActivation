@@ -1,0 +1,160 @@
+---
+title: "Step2_Statistics of Tandem UTR and ALE without removing nearby PASs"
+author: "Yeonui+Kwak"
+date: "8/9/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig3/Rcode/")
+
+```
+
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+```
+
+```{R}
+
+final<-read.table("3pseq.all.temporalCPSsamples.ALE.tandemUTR.UTRlen.annotation.txt",header=T,stringsAsFactors = F)
+
+final%>%arrange(hgnc,time,CPSid,readcount)%>%head
+```
+
+
+```{R}
+cat("Number of genes investigated: ",final%>%summarise(n_distinct(hgnc))%>%unlist())
+cat("Number of genes investigated: ",final%>%summarise(n_distinct(hgnc,ALE))%>%unlist())
+cat("Number of genes investigated: ",final%>%summarise(n_distinct(CPSid))%>%unlist())
+cat("Number of genes or last exons that coontain multiple tandem UTRs")
+final%>%group_by(hgnc,time,ALE)%>%summarise(num=n_distinct(Tandem))%>%ungroup()%>%filter(num>1)%>%group_by(time,num)%>%summarise(n())
+final%>%group_by(hgnc,time,ALE)%>%summarise(num=n_distinct(Tandem))%>%ungroup()%>%filter(num>1)%>%summarise(n_distinct(hgnc))
+final%>%group_by(hgnc,time,ALE)%>%summarise(num=n_distinct(Tandem))%>%ungroup()%>%filter(num>1)%>%summarise(n_distinct(hgnc,ALE))
+```
+
+
+
+```{R}
+final%>%group_by(hgnc,time,ALE)%>%summarise(num=n_distinct(Tandem))%>%ungroup()%>%filter(num>1)%>%summarise(n_distinct(hgnc))
+final%>%group_by(hgnc,time,ALE)%>%summarise(num=n_distinct(Tandem))%>%ungroup()%>%unite("newid",c(hgnc,ALE),sep=":")%>%filter(num>1)%>%summarise(n_distinct(newid))
+cat("6475 ALEs of 5464 genes have multiple tandem UTRs")
+```
+
+Considering all PASs in the 3'UTR +1kb.
+
+```{R}
+
+tandem.stat=final%>%group_by(hgnc,ALE)%>%summarise(tandem_count=n_distinct(Tandem))%>%ungroup()%>%group_by(tandem_count)%>%summarise(Lastexon.count=n())%>%
+  mutate(count=ifelse(tandem_count>10,">10",tandem_count))%>%
+  group_by(count)%>%summarise(Lastexon.count=sum(Lastexon.count))%>%ungroup()%>%
+  mutate(group=ifelse(count==1,"single 3'UTR","multiple tandem 3'UTRs"))%>%
+  mutate(count=factor(count,levels = c(1:10,">10")))
+write.table(tandem.stat,"tandem.stat_considering all PASs without removal of nearby PAS.txt",col.names = T,row.names = F,sep="\t",quote=F)
+pdf("tandem.stat_considering all PASs without removal of nearby PAS.pdf",width=5,height=2.5)
+ggplot(tandem.stat,aes(x=(count),y=Lastexon.count,fill=group))+geom_bar(stat="identity")+xlab("Number of tandem 3'UTRs")+ylab("Number of last exons")+theme_minimal()+scale_fill_manual(values =yk.col(2)[c(1,2)])
+dev.off()
+pdf("tandem.stat.multipleonly.pdf",width=3,height=2.5)
+ggplot(tandem.stat%>%filter(count!=1),aes(x=as.factor(count),y=Lastexon.count,fill=group))+geom_bar(stat="identity")+theme_minimal()+xlab("Number of tandem 3'UTRs")+ylab("Number of last exons")+theme(
+  panel.background = element_rect(fill = "white"))+scale_fill_manual(values =yk.col(2)[1])+theme(legend.position = "none")
+dev.off()
+```
+
+```{R}
+ALE.stat=final%>%group_by(hgnc)%>%summarise(ale_count=n_distinct(ALE))%>%ungroup()%>%group_by(ale_count)%>%summarise(gene.count=n())%>%
+  mutate(count=ifelse(ale_count>5,">5",ale_count))%>%
+  group_by(count)%>%summarise(gene.count=sum(gene.count))%>%ungroup()%>%
+  mutate(group=ifelse(count==1,"single ALE","multiple ALEs"))%>%
+  mutate(count=factor(count,levels = c(1:5,">5")))
+write.table(ALE.stat,"ALE.stat_considering all PASs without removal of nearby PAS.txt",col.names = T,row.names = F,sep="\t",quote=F)
+
+pdf("ALE.stat without removing nearby PAS.pdf",width=4,height=2.5)
+ggplot(ALE.stat,aes(x=as.factor(count),y=gene.count,fill=group))+geom_bar(stat="identity")+xlab("Number of ALEs")+ylab("Number of genes")+theme_minimal()+scale_fill_manual(values =yk.col(2)[c(1,2)])
+dev.off()
+pdf("ALE.stat.multipleonly_without removing nearby PAS.pdf",width=3,height=2.5)
+ggplot(ALE.stat%>%filter(count!=1),aes(x=as.factor(count),y=gene.count,fill=group))+geom_bar(stat="identity")+theme_minimal()+xlab("Number of ALEs")+ylab("Number of genes")+theme(
+  panel.background = element_rect(fill = "white"))+scale_fill_manual(values =yk.col(2)[1])+theme(legend.position = "none")
+dev.off()
+```
+
+
+General trend in weighted 3'UTR length of last exons.
+
+1.Select genes with multiple tandem UTRs.
+```{R}
+id=final%>%group_by(hgnc,ALE)%>%
+  summarise(Tandem_count=n_distinct(Tandem))%>%ungroup()%>%
+  unite("newid",c(hgnc,ALE),sep=":")%>%filter(Tandem_count>1)%>%
+  select(newid,Tandem_count)%>%distinct()
+```
+
+2.. Calculate weight UTR length per last exon
+```{R}
+
+final.tandem=final%>%ungroup()%>%
+  group_by(hgnc,time,ALE)%>%
+  rename(tandemUTR=utrlen)%>%
+  summarise(weightutrlen=weighted.mean(tandemUTR,readcount))%>%
+  ungroup()%>%arrange(hgnc,ALE,time)%>%na.omit()
+write.table(final.tandem,"3pseq.all.temporalCPSsamples.weightedUTRlength.txt",col.names=T,row.names = F,quote=F,sep="\t")
+
+```
+
+```{R}
+
+final.multipletandem=final.tandem%>%unite("newid",c(hgnc,ALE),sep=":",remove = F)%>%inner_join(id,by="newid")#%>%separate(newid,c("hgnc","newALE"),sep=":")
+
+final_=final%>%arrange(hgnc,time,ALE,Tandem)%>%
+  select(hgnc,ALE,time,Tandem,CPSid,id,relpos,strand,readcount,ratio)%>%
+  unite("newid",c(hgnc,ALE),sep=":")
+sum.tmp=final_%>%group_by(newid,time)%>%summarise(sum=sum(ratio))
+final.multipletandem=final.multipletandem%>%
+  inner_join(sum.tmp, by="newid")%>%filter(time.x==time.y)%>%rename(time=time.y)%>%select(-time.x)
+final%>%filter(hgnc=="MSRA")
+final.multipletandem%>%filter(hgnc=="MSRA")
+#final.multipletandem2=final.multipletandem%>%ungroup()%>%
+  group_by(hgnc,time)%>%summarise(weightutrlen.hgnc=weighted.mean(weightutrlen,sum))%>%ungroup()%>%na.omit()
+```
+
+
+
+
+```{R}
+pdf("average 3UTRlength1.pdf",width=4,height=3)
+ggplot(final.multipletandem,aes(x=as.factor(time),y=(weightutrlen),fill=as.factor(time)))+
+  geom_boxplot(notch =T)+theme_bw()+scale_fill_manual(values=yk.col(8)[1:24])+
+  xlab("Time upon LPS")+ylab("Weighted UTR length of last exon(nt)")+ylim(c(0,3000))
+dev.off()
+
+t=final.multipletandem%>%group_by(time)%>%
+  summarise(m=mean(weightutrlen))
+pdf("averageofweighted3UTRlength.pdf",width=2.5,height=3)
+ggplot(t,aes(x=as.factor(time),y=(m)))+
+    geom_bar(stat ="identity")+theme_bw()+scale_fill_manual(values=yk.col(8)[1:24])+
+  xlab("Time upon LPS")+ylab("Average of weighted 3'UTR lengths(nt)")+ylim(c(0,2000))
+dev.off()
+```
+
+
+
+
+
+
+
+
+

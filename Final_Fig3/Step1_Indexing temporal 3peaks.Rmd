@@ -1,0 +1,75 @@
+---
+title: "ALE and tandem UTR switch:Step1:Indexing ALE and Tandem PAS for all custom transcripts in temporal 3p-seq table."
+author: "Yeonui+Kwak"
+date: "8/9/2020"
+output: html_document
+---
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig3/Rcode/")
+
+```
+
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+```
+
+1. Load PAL at custom PAS for Multiple timepoints and adding index and 3UTR length info
+```{R}
+ref=read.table("transcript.custom.ALE.tandem.index.annotation.txt",stringsAsFactors = F,header=T)
+utrlen=read.table("custom.UTRlen.table.txt",header=T,stringsAsFactors = F)
+utrlen=utrlen%>%select(V4,utrlen)
+ref=ref%>%inner_join(utrlen,by="V4")
+head(ref)
+#cps=read.table("cpspeak.readcount.table.2020.05.20.3UTR1KB.ext.txt",header=T,stringsAsFactors = F)
+cps=read.table("cpspeak.readcount.table.2020.08.07.3UTR1KB.ext.txt",header=T,stringsAsFactors = F)
+#cps=cps%>%select(id,CPSpos,cps.ratio.perhgnc)%>%unite("newid",c(id,CPSpos),sep=":")%>%distinct_at(vars(newid),.keep_all = T)
+cps=cps%>%unite("newid",c(id,CPSpos),sep=":",remove = F)
+ref=ref%>%select(V4,ALE,Tandem,utrlen,id,CPSpos)%>%unite("newid",c(id,CPSpos),sep=":")
+cps=cps%>%inner_join(ref,by="newid")
+head(cps)
+```
+2. At this point, CPSid is redundantly mapped to all intersecting transcript isoforms.
+arrange by time, hgnc, CPSid, abs(relpos), ALE, id.
+and leave the transcript id with the shortest relative distance. (no need)
+In the above merging, selecting completed.
+```{R}
+
+tmp=cps%>%select(-CPSpos,-refpos,-cps.ratio.perhgnc)%>%
+  arrange(hgnc,time,CPSid,(abs(relpos)),ALE,id)%>%#ALE added or omitted?? haven't decided yet
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)%>%
+  filter(readcount>=0)%>%
+  group_by(hgnc,time)%>%
+  mutate(ratio=(readcount)/sum(readcount))%>%
+  ungroup()
+
+
+```
+
+#New ALE indexing.
+```{R}
+
+newale=tmp%>%select(hgnc,ALE)%>%arrange(hgnc,ALE)%>%distinct()%>%
+  group_by(hgnc)%>%mutate(newALE=rank(ALE))
+tmp2=tmp%>%ungroup()%>%unite("newid",c(hgnc,ALE),sep=":")%>%inner_join(newale%>%unite("newid",c(hgnc,ALE),sep=":"),by="newid")%>%separate(newid,c("hgnc","ALE"),sep=":")%>%select(-ALE)%>%rename(ALE=newALE)
+head(tmp2)
+
+write.table(tmp2,"3pseq.all.temporalCPSsamples.ALE.tandemUTR.UTRlen.annotation.txt",col.names=T,row.names = F,quote=F,sep="\t")
+```
+
+3.

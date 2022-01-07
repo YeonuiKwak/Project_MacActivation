@@ -1,0 +1,414 @@
+---
+title: "Step5:ALE"
+author: "Yeonui+Kwak"
+date: "8/9/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig3/Rcode/")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+```{R}
+if(!require(coin)){install.packages("coin")}
+if(!require(rcompanion)){install.packages("rcompanion")}
+library(coin);library(rcompanion)
+#install.packages("DescTools")
+#library(DescTools)
+pears.cor=function(table, rscore, cscore)
+{ 
+	dim=dim(table) 
+	rbar=sum(margin.table(table,1)*rscore)/sum(table) 
+	rdif=rscore-rbar 
+	cbar=sum(margin.table(table,2)*cscore)/sum(table) 
+	cdif=cscore-cbar 
+	ssr=sum(margin.table(table,1)*(rdif^2)) 
+	ssc=sum(margin.table(table,2)*(cdif^2)) 
+	ssrc=sum(t(table*rdif)*cdif) 
+	pcor=ssrc/(sqrt(ssr*ssc)) 
+	pcor 
+	M2=(sum(table)-1)*pcor^2
+	M2
+	result=c(pcor, M2)
+	result
+	} 
+
+```
+
+```{R}
+# Function to apply chisq.test() to tibble groups
+diffCPS.test = function(tm, cn, rc) {
+	cont.t = data.frame(time = tm, cpsNo = cn, readCount = rc) %>%
+		spread(time, readCount)
+	return(chisq.test(cont.t[, -1])$p.value)}
+TSI.cor.test=function(cps,tm,rc){
+  cont.t=data.frame(CPS=cps,Time=tm,Readcounts=rc)%>%
+    spread(CPS,Readcounts)
+mat=as.matrix(cont.t[,-1])
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "ALEindex"=as.character(c(colnames(mat)))
+))
+
+#t=prop.table(t,margin=1)*100
+t=as.table(round(t,0)) #when you use mean.rc
+x=pears.cor(t,cscore=1:ncol(t),rscore=1:nrow(t))
+#lt <- lbl_test(t, scores = list("utrlen"=1:ncol(t),"time"=1:nrow(t)))
+  return(x[1])
+}
+
+
+
+
+```
+#code below used only for tandem UTR switch
+```{R}
+##edited TSI.cor.test
+
+TSI.cor.test=function(cps,tm,rc,cpsutrlen){
+  cont.t=data.frame(CPS=cps,Time=tm,Readcounts=rc)%>%
+    spread(CPS,Readcounts)
+  
+  df=data.frame(CPS=cpsutrlen,Time=tm)%>%
+    separate(CPS,c("Tandem","utrlen"),sep=":")%>%
+    select(-Time)%>%arrange(Tandem,utrlen)%>%
+    distinct()%>%mutate(utrlen=as.numeric(utrlen))%>%
+  mutate(Tandem=as.numeric(Tandem))#%>%spread(UTRlen,Readcounts)
+vec=df$Tandem
+names(vec)=df$utrlen
+mat=as.matrix(cont.t[,-1])
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "CPSindex"=as.character(c(colnames(mat)))
+))
+
+t=as.table(round(t,0)) 
+x=pears.cor(t,cscore=as.numeric(names(vec)),rscore=1:nrow(t))
+  return(x[1])
+}
+
+
+```
+
+1. Load temporal 3p-seq data with annotated ALE, and tandem UTR
+```{R}
+cps<-read.table("3pseq.all.temporalCPSsamples.ALE.tandemUTR.UTRlen.annotation.txt",header=T,stringsAsFactors = F)
+
+```
+2. ALE switch test.
+select genes with multiple ALEs
+2.1 Distal ALE is a preferred isoform in the cells.
+```{R}
+ale.sum=cps%>%group_by(hgnc,ALE,time)%>%summarise(s=sum(readcount))%>%ungroup()
+ale.summary=ale.sum%>%group_by(hgnc)%>%summarise(alecount=n_distinct(ALE))%>%ungroup()%>%
+  filter(alecount>1&alecount<=3)%>%select(hgnc,alecount)%>%inner_join(ale.sum,by="hgnc")%>%ungroup()%>%group_by(time,hgnc)%>%mutate(PSI=s/sum(s))
+pdf("Fig3B_ALE expression_uponLPS.pdf",width=5,height=3)
+ggplot(ale.summary,aes(x=as.factor(time),fill=as.factor(ALE),y=PSI))+
+  geom_boxplot()+facet_wrap(.~alecount)+xlab("time upon LPS")+ylab("PSI")+scale_fill_manual(values=yk.col(5)[c(2,4,5)])+labs(fill="ALE index")+theme_bw()
+dev.off()
+
+```
+
+
+
+```{R}
+library(gridExtra)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(5)[c(1,2,4,5)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(0,1) +
+  ylab("Cumulative fraction")
+
+
+```
+
+Draw CDF plot
+```{R}
+all=ale.summary%>%filter((alecount==3&ALE==3)|(alecount==2&ALE==2))
+
+pdf("Fig3C_cdf_PSI_Distal_upon LPS.pdf",width=5,height=3)
+cdf_common +
+  stat_ecdf(data = all,
+            aes(x = PSI,
+                col = as.factor(time)),
+            geom = "step") +
+  labs( title =expression("Genes with multiple ALEs" ),color ="Time") +facet_grid(.~alecount)+
+xlab("PSI of distal ALE isoform")
+dev.off()
+```
+
+
+Global Switch in ALEs didn't occur upon LPS stimulation
+```{R}
+all=list()
+
+for (i in 2:3){
+ale.summary=ale.sum%>%group_by(hgnc)%>%summarise(alecount=n_distinct(newALE))%>%ungroup()%>%
+  filter(alecount==i)%>%select(hgnc)%>%inner_join(ale.sum,by="hgnc")
+ale.summary2=ale.summary%>%spread(newALE,s)%>%mutate(Distal=.[[i+2]])%>%
+  select(time,Distal,hgnc)%>%
+  mutate(ALE_count=i)
+all[[i]]=ale.summary2
+}
+all=all%>%bind_rows()
+cat("number of genes with two ALEs",unlist(all%>%group_by(ALE_count)%>%summarise(n_distinct(hgnc))))
+ggplot(all,aes(x=as.factor(time),y=Distal,fill=as.factor(ALE_count)))+
+  geom_boxplot(notch = T)+
+  
+  facet_grid(.~ALE_count)
+
+
+ale.summary%>%group_by(alecount)%>%summarise(n_distinct(hgnc))
+
+```
+
+2.3 chisq.test and PSI
+
+
+
+ALE switch
+dPSI>0.1
+#tandem 3'UTR switch 
+```{R}
+ale.sum=cps%>%group_by(hgnc,ALE,time)%>%summarise(s=sum(readcount))
+final2=ale.sum%>%group_by(hgnc)%>%summarise(alecount=n_distinct(ALE))%>%ungroup()%>%
+  filter(alecount>1)%>%select(hgnc)%>%inner_join(ale.sum,by="hgnc")
+final2%>%summarise(n_distinct(hgnc)) #2690 genes with multiple ALE
+id20=final2%>%group_by(hgnc)%>%summarise(s=sum(s))%>%filter(s>20)%>%select(hgnc) #80 removed
+final2=final2%>%inner_join(id20,by="hgnc")
+```
+
+
+```{r}
+timelist=list(c(0,1),c(1,2),c(0,2),c(2,4),c(1,4),c(0,4))
+result=list()
+for ( i in 1:6){
+ final.tmp=final2%>%filter(time%in%timelist[[i]]) 
+
+cr.pv = final.tmp %>%
+	ungroup() %>%
+	group_by(hgnc) %>%
+	summarise(pval = diffCPS.test(cn=ALE,tm=time,rc=s))
+
+cr.pv = cr.pv %>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))
+
+cr.pv2 = final.tmp %>%
+	ungroup() %>%
+	group_by(hgnc) %>%
+	summarise(pcor = TSI.cor.test(cps=ALE,tm=time, rc=s))
+
+cr.pv=cr.pv%>%inner_join(cr.pv2,by="hgnc")#%>%inner_join(cr.pv3, by="hgnc")
+
+cr.pv=cr.pv%>%filter_all(all_vars(!is.nan(.)))
+result[[i]]<-cr.pv
+}
+time=c("0-1h","1-2h","0-2h","2-4h","1-4h","0-4h")
+for (i in 1:6){
+ result[[i]]=result[[i]]%>%mutate(type=rep(time[i]) )
+}
+
+final=result%>%reduce(bind_rows)
+write.table(final,"ALEswitch.chisqure.test.result.txt",col.names = T,row.names = F,quote=F )
+final%>%
+  filter(fdr<0.01)%>%
+  filter(abs(pcor)>0.1)%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(cor)%>%select(hgnc,cor,type)%>%distinct()%>%summarise(n_distinct(hgnc))
+#
+final%>%
+  filter(fdr<0.01)%>%
+  filter(abs(pcor)>0.1)%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(cor)%>%select(hgnc,cor,type)%>%distinct()%>%group_by(hgnc)%>%summarise(n=n_distinct(cor))%>%filter(n==2)#4 detected for switching to both directions.
+
+```
+
+
+```{r}
+final%>%filter(fdr<0.01)%>%filter(abs(pcor)>0.1)%>%summarise(n_distinct(hgnc))
+cat("number of hgnc:ALE with switch in tandem3'UTR")
+final%>%filter(fdr<0.01)%>%filter(abs(pcor)>0.1)%>%ungroup()%>%summarise(n_distinct(hgnc)) #38
+final%>%filter(fdr<0.01)%>%filter(abs(pcor)>0.1)%>%ungroup()%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(cor)%>%summarise(n_distinct(hgnc))
+write.table(final%>%
+  filter(fdr<0.01)%>%
+  filter(abs(pcor)>0.1)%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(cor)%>%select(hgnc,cor,type,pval,pcor)%>%distinct(),"ALEswitch.chisqure.test.result_passed.txt",col.names = T,row.names = F,quote=F )
+t=final%>%group_by(type)%>%filter(fdr<0.01)%>%filter(abs(pcor)>0.1)%>%mutate(direction=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(type,direction)%>%summarise(significant=n())
+#t[10,]=c("1-2h","distal",0)
+#t[9,]=c("2-4h","distal",0)
+t=t%>%ungroup()%>%complete(type,nesting(direction),fill =list(significant=0))%>%mutate(significant=as.numeric(significant))
+
+pdf("Fig3F_hgnc_ALEswitch.pdf",width=4,height=3)
+ggplot(t,aes(x=type,y=significant,fill=direction,group=direction))+
+  geom_bar(stat="identity")+theme_bw()+xlab("Comparison")+
+theme_bw()+ylab("Number of ALE shift")+xlab("Comparison")+scale_fill_manual(values=yk.col(5)[c(4,2)])
+
+dev.off()
+final%>%filter(fdr<0.05)%>%filter(abs(pcor)>0.1)%>%ungroup()%>%filter(hgnc=="LRCH4")
+
+```
+
+```{R}
+write.table(
+final%>%filter_all(all_vars(!is.nan(.)))%>%filter(fdr<0.01)%>%filter((pcor)>(0.1))%>%select(hgnc)%>%distinct(),"TSI.result.switchtoDistal.ALE.txt",col.names = F,row.names = F,quote=F,sep="\t")
+
+write.table(
+final%>%filter_all(all_vars(!is.nan(.)))%>%filter(fdr<0.01)%>%filter((pcor)<(-0.1))%>%select(hgnc)%>%distinct(),"TSI.result.switchtoProximal.ALE.txt",col.names = F,row.names = F,quote=F,sep="\t")
+
+write.table(cps%>%select(hgnc)%>%arrange(hgnc)%>%distinct(),"ALEswitch.analysis.backgroundhgnc.n.10497.txt",col.names = F,row.names = F,quote=F,sep="\t") 
+cps%>%select(hgnc)%>%arrange(hgnc)%>%distinct()%>%nrow
+```
+
+Example genes.
+
+TSI index
+```{R}
+# install.packages("devtools")
+#devtools::install_github("haleyjeppson/ggmosaic")
+library(ggmosaic)
+#install.packages("vcd")
+library("vcd")
+# plot just a subset of the table
+f=final2%>%ungroup()%>%filter(hgnc=="PSMD4")%>%select(newALE,time,s)%>%spread(newALE,s)#%>%
+f=final2%>%ungroup()%>%filter(hgnc=="NUB1")%>%select(newALE,time,s)%>%spread(newALE,s)
+f=ale.sum%>%ungroup()%>%filter(hgnc=="CLTA")%>%select(ALE,time,s)%>%spread(ALE,s)
+f=ale.sum%>%ungroup()%>%filter(hgnc=="LRCH4")%>%select(ALE,time,s)%>%spread(ALE,s)
+
+f=f%>%mutate(time=as.numeric(time))
+f
+mat=as.matrix(f[c(1:4),-1])
+rownames(mat)=c(0,1,2,4)
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "ALE index"=colnames(mat)))
+
+#t=prop.table(t,margin=1)*100
+t=as.table(round(t))
+t
+
+#lt <- lbl_test(t, scores = list("Relative Position from the reference poly(A) site"=1:ncol(t),"time"=1:nrow(t)))
+cmh_test(t)
+
+spineplot(t)
+library("graphics")
+
+
+pdf("Fig3I_LRCH4_SWITCHtoProximalALE_mosaic.pdf",width=3.5,height=4)
+    mosaicplot((t), shade = F, las=1,cex.axis = 0.66,
+           main = "Switch in ALEs for LRCH4",color = yk.col(ncol(t))[1:ncol(t)],labeling_args = list(
+     gp_labels = gpar(fontsize = 12, fontface = 3),
+     gp_varnames = gpar(fontsize = 16, fontface = 2)))
+
+dev.off()
+
+
+pdf("LRCH4_horizontal.pdf",width=3,height=4)
+assocplot(t, col=c("red","blue"),space =0.5)
+dev.off()
+
+
+
+pdf("CLTA_SWITCHtoDistalALE_mosaic.pdf",width=3.5,height=4)
+    mosaicplot((t), shade = F, las=1,cex.axis = 0.66,
+           main = "Switch in ALEs for CLTA",color = yk.col(ncol(t))[1:ncol(t)],labeling_args = list(
+     gp_labels = gpar(fontsize = 12, fontface = 3),
+     gp_varnames = gpar(fontsize = 16, fontface = 2)))
+
+dev.off()
+
+
+pdf("CLTA_horizontal.pdf",width=3,height=4)
+assocplot(t, col=c("red","blue"),space =0.5)
+dev.off()
+
+```
+
+Switch in ALE vs RNA level change.
+0h vs 1h
+```{R}
+test=final%>%filter(type=="0-1h")%>%filter(pcor!=1)
+test.rna=ale.sum%>%group_by(hgnc,time)%>%summarise(sum.rc=sum(s))%>%spread(time,sum.rc)%>%mutate(dRNA=log2(`1`/`0`))%>%select(hgnc,dRNA)
+test.tmp=test%>%inner_join(test.rna,by="hgnc")
+test.tmp=test.tmp%>%
+  #filter(fdr<0.05&abs(pcor)>0.1)%>%
+  mutate(col=ifelse(fdr<0.01&pcor>0.1,"To Distal",ifelse(fdr<0.01&pcor<(-0.1),"To Proximal","No change")))%>%mutate(col=factor(col,levels=c("No change","To Proximal","To Distal")))
+
+#test.tmp=test.tmp%>%filter(pval<0.01)%>%mutate(col=ifelse(pcor>0.1,"To Distal",ifelse(pcor<(-0.1),"To Proximal","No change")))
+pdf("dRNA vs ALE switch0.1.pdf",width=5,height=4)
+ggplot(test.tmp,aes(x=pcor,y=dRNA,col=col))+geom_jitter (aes(size=-log10(fdr)))+scale_colour_manual(values=c("black","red","blue"))+theme_bw()+xlab("ALE switch index")+ylab("log2(LPS 1h/LPS 0h)")+xlim(c(-1,1))+ylim(c(-6,6))
+dev.off()
+pdf("Fig3G_dRNA vs ALE switch_boxplot0.1.pdf",width=4,height=3)
+ggplot(test.tmp,aes(x=col,y=dRNA,fill=col))+
+  geom_boxplot(notch=T)+
+  scale_fill_manual(name="Direction",values=yk.col(5)[c(3,2,4)])+theme_bw()+xlab("ALE switch")+ylab("log2(LPS 1h/LPS 0h)")
+dev.off()
+t.test(test.tmp$dRNA[test.tmp$col=="To Proximal"],test.tmp$dRNA[test.tmp$col=="To Distal"])
+```
+
+0h vs 2h
+```{R}
+test=final%>%filter(type=="0-2h")%>%filter(pcor!=1)
+test.rna=ale.sum%>%group_by(hgnc,time)%>%summarise(sum.rc=sum(s))%>%spread(time,sum.rc)%>%mutate(dRNA=log2((`2`+1)/(`0`+1)))%>%select(hgnc,dRNA)
+test.tmp=test%>%inner_join(test.rna,by="hgnc")
+test.tmp=test.tmp%>%
+  #filter(fdr<0.05&abs(pcor)>0.1)%>%
+  mutate(col=ifelse(fdr<0.01&pcor>0.1,"To Distal",ifelse(fdr<0.01&pcor<(-0.1),"To Proximal","No change")))%>%mutate(col=factor(col,levels=c("No change","To Proximal","To Distal")))
+
+#test.tmp=test.tmp%>%filter(pval<0.01)%>%mutate(col=ifelse(pcor>0.1,"To Distal",ifelse(pcor<(-0.1),"To Proximal","No change")))
+pdf("dRNA vs ALE switch0.2.pdf",width=5,height=4)
+ggplot(test.tmp,aes(x=pcor,y=dRNA,col=col))+geom_jitter (aes(size=-log10(fdr)))+scale_colour_manual(values=c("black","red","blue"))+theme_bw()+xlab("ALE switch index")+ylab("log2(LPS 2h/LPS 0h)")+xlim(c(-1,1))+ylim(c(-6,6))
+dev.off()
+pdf("Fig3G_dRNA vs ALE switch_boxplot0.2.pdf",width=4,height=3)
+ggplot(test.tmp,aes(x=col,y=dRNA,fill=col))+
+  geom_boxplot(notch=T)+
+  scale_fill_manual(name="Direction",values=yk.col(5)[c(3,2,4)])+theme_bw()+xlab("ALE switch")+ylab("log2(LPS 2h/LPS 0h)")
+dev.off()
+t.test(test.tmp$dRNA[test.tmp$col=="To Proximal"],test.tmp$dRNA[test.tmp$col=="To Distal"])
+```
+
+0h vs 4h
+
+```{R}
+test=final%>%filter(type=="0-4h")%>%filter(pcor!=1)
+test.rna=ale.sum%>%group_by(hgnc,time)%>%summarise(sum.rc=sum(s))%>%spread(time,sum.rc)%>%mutate(dRNA=log2((`4`+1)/(`0`+1)))%>%select(hgnc,dRNA)
+test.tmp=test%>%inner_join(test.rna,by="hgnc")
+test.tmp=test.tmp%>%
+  #filter(fdr<0.05&abs(pcor)>0.1)%>%
+  mutate(col=ifelse(fdr<0.01&pcor>0.1,"To Distal",ifelse(fdr<0.01&pcor<(-0.1),"To Proximal","No change")))%>%mutate(col=factor(col,levels=c("No change","To Proximal","To Distal")))
+
+pdf("Fig3G_dRNA vs ALE switch_boxplot0.4.pdf",width=4,height=3)
+ggplot(test.tmp,aes(x=col,y=dRNA,fill=col))+
+  geom_boxplot(notch=T)+
+  scale_fill_manual(name="Direction",values=yk.col(5)[c(3,2,4)])+theme_bw()+xlab("ALE switch")+ylab("log2(LPS 4h/LPS 0h)")
+dev.off()
+t.test(test.tmp$dRNA[test.tmp$col=="To Proximal"],test.tmp$dRNA[test.tmp$col=="To Distal"])
+test.tmp%>%group_by(col)%>%summarise(n())
+
+```
+
+

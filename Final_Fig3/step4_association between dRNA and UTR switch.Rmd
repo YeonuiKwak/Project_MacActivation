@@ -1,0 +1,177 @@
+---
+title: "Step4_Association between dRNA and UTR switch"
+author: "Yeonui+Kwak"
+date: "8/9/2020"
+output: html_document
+---
+Tandem UTR switch v.s dRNA
+0 h vs 1 h
+```{R}
+final<-read.table("tandemUTRswitch.chisqure.test.result.txt",header=T,stringsAsFactors = F)
+#Select the compared time points
+test=final%>%filter(type=="0-1h")%>%filter(pcor!=1)
+
+#select genes with multiple tandem UTRs
+peak<-read.table("3pseq.all.temporalCPSsamples.ALE.tandemUTR.UTRlen.annotation.txt",header=T,stringsAsFactors = F)
+id=peak%>%group_by(hgnc,ALE)%>%
+  summarise(Tandem_count=n_distinct(Tandem))%>%ungroup()%>%
+  unite("newid",c(hgnc,ALE),sep=":")%>%filter(Tandem_count>1)%>%
+  select(newid,Tandem_count)%>%distinct()
+peak=peak%>%unite("newid",c(hgnc,ALE),sep=":",remove = F)%>%inner_join(id,by="newid")
+id20=peak%>%group_by(newid)%>%summarise(sum.rc=sum(readcount))%>%filter(sum.rc>=20)%>%select(newid)
+peak=peak%>%inner_join(id20,by="newid")
+
+#RNA abundance per last exon (new id)
+test.rna=peak%>%ungroup()%>%group_by(newid,time)%>%
+  summarise(sum.rc=sum(readcount))%>%spread(time,sum.rc)%>%mutate(dRNA=log2((`1`+1)/(`0`+1)))%>%select(newid,dRNA)
+test.tmp=test%>%inner_join(test.rna,by="newid")
+test.tmp=test.tmp%>%
+  #filter(fdr<0.05&abs(pcor)>0.1)%>%
+  mutate(col=ifelse(fdr<0.05&pcor>0.1,"To Distal",ifelse(fdr<0.05&pcor<(-0.1),"To Proximal","No change")))%>%mutate(col=factor(col,levels=c("No change","To Proximal","To Distal")))
+
+pdf("dRNA vs tandem switch0.1.newid.pdf",width=5,height=4)
+ggplot(test.tmp,aes(x=pcor,y=dRNA,col=col))+geom_jitter (aes(size=-log10(fdr)))+scale_colour_manual(values=c("black","blue","red"))+theme_bw()+xlab("Tandem 3´UTR switch index")+ylab("log2(LPS 1h/LPS 0h)")
+dev.off()
+
+pdf("dRNA lastexon vs tandem switch.boxplot_0hvs1h.pdf",width=4,height=3)
+ggplot(test.tmp,aes(x=col,y=dRNA,fill=col))+
+  geom_boxplot(notch=T)+
+  scale_fill_manual(values=yk.col(5)[c(3,2,4)])+theme_bw()+xlab("Tandem 3´UTR switch")+ylab("log2(LPS 1h/LPS 0h)")#+ylim(c(-3,6))
+dev.off()
+t.test(test.tmp$dRNA[test.tmp$col=="To Proximal"],test.tmp$dRNA[test.tmp$col=="To Distal"])
+```
+
+
+0 h vs 2 h
+```{R}
+final<-read.table("tandemUTRswitch.chisqure.test.result.txt",header=T,stringsAsFactors = F)
+test=final%>%filter(type=="0-2h")%>%filter(pcor!=1)
+peak<-read.table("3pseq.all.temporalCPSsamples.ALE.tandemUTR.UTRlen.annotation.txt",header=T,stringsAsFactors = F)
+id=peak%>%group_by(hgnc,ALE)%>%
+  summarise(Tandem_count=n_distinct(Tandem))%>%ungroup()%>%
+  unite("newid",c(hgnc,ALE),sep=":")%>%filter(Tandem_count>1)%>%
+  select(newid,Tandem_count)%>%distinct()
+peak=peak%>%unite("newid",c(hgnc,ALE),sep=":",remove = F)%>%inner_join(id,by="newid")
+id20=peak%>%group_by(newid)%>%summarise(sum.rc=sum(readcount))%>%filter(sum.rc>=20)%>%select(newid)
+peak=peak%>%inner_join(id20,by="newid")
+
+
+test.rna=peak%>%ungroup()%>%group_by(newid,time)%>%
+  summarise(sum.rc=sum(readcount))%>%spread(time,sum.rc)%>%mutate(dRNA=log2((`2`+1)/(`0`+1)))%>%select(newid,dRNA)
+test.tmp=test%>%inner_join(test.rna,by="newid")
+test.tmp=test.tmp%>%
+  #filter(fdr<0.05&abs(pcor)>0.1)%>%
+  mutate(col=ifelse(fdr<0.05&pcor>0.1,"To Distal",ifelse(fdr<0.05&pcor<(-0.1),"To Proximal","No change")))%>%mutate(col=factor(col,levels=c("No change","To Proximal","To Distal")))
+
+pdf("dRNA vs tandem switch0.2.newid.pdf",width=5,height=4)
+ggplot(test.tmp,aes(x=pcor,y=dRNA,col=col))+geom_jitter (aes(size=-log10(fdr)))+scale_colour_manual(values=c("black","blue","red"))+theme_bw()+xlab("Tandem 3´UTR switch index")+ylab("log2(LPS 2h/LPS 0h)")
+dev.off()
+
+pdf("dRNA lastexon vs tandem switch.boxplot.pdf",width=4,height=3)
+ggplot(test.tmp,aes(x=col,y=dRNA,fill=col))+
+  geom_boxplot(notch=T)+
+  scale_fill_manual(values=yk.col(5)[c(3,2,4)])+theme_bw()+xlab("Tandem 3´UTR switch")+ylab("log2(LPS 2h/LPS 0h)")#+ylim(c(-3,6))
+dev.off()
+t.test(test.tmp$dRNA[test.tmp$col=="To Proximal"],test.tmp$dRNA[test.tmp$col=="To Distal"])
+```
+
+
+0 h vs 4 h
+```{R}
+final<-read.table("tandemUTRswitch.chisqure.test.result.txt",header=T,stringsAsFactors = F)
+test=final%>%filter(type=="0-4h")%>%filter(pcor!=1)
+peak<-read.table("3pseq.all.temporalCPSsamples.ALE.tandemUTR.UTRlen.annotation.txt",header=T,stringsAsFactors = F)
+id=peak%>%group_by(hgnc,ALE)%>%
+  summarise(Tandem_count=n_distinct(Tandem))%>%ungroup()%>%
+  unite("newid",c(hgnc,ALE),sep=":")%>%filter(Tandem_count>1)%>%
+  select(newid,Tandem_count)%>%distinct()
+peak=peak%>%unite("newid",c(hgnc,ALE),sep=":",remove = F)%>%inner_join(id,by="newid")
+id20=peak%>%group_by(newid)%>%summarise(sum.rc=sum(readcount))%>%filter(sum.rc>=20)%>%select(newid)
+peak=peak%>%inner_join(id20,by="newid")
+
+
+test.rna=peak%>%ungroup()%>%group_by(newid,time)%>%
+  summarise(sum.rc=sum(readcount))%>%spread(time,sum.rc)%>%mutate(dRNA=log2((`4`+1)/(`0`+1)))%>%select(newid,dRNA)
+test.tmp=test%>%inner_join(test.rna,by="newid")
+test.tmp=test.tmp%>%
+  #filter(fdr<0.05&abs(pcor)>0.1)%>%
+  mutate(col=ifelse(fdr<0.05&pcor>0.1,"To Distal",ifelse(fdr<0.05&pcor<(-0.1),"To Proximal","No change")))%>%mutate(col=factor(col,levels=c("No change","To Proximal","To Distal")))
+
+pdf("dRNA vs tandem switch0.2.newid.pdf",width=5,height=4)
+ggplot(test.tmp,aes(x=pcor,y=dRNA,col=col))+geom_jitter (aes(size=-log10(fdr)))+scale_colour_manual(values=c("black","blue","red"))+theme_bw()+xlab("Tandem 3´UTR switch index")+ylab("log2(LPS 2h/LPS 0h)")
+dev.off()
+
+pdf("dRNA lastexon vs tandem switch.boxplot_0hvs4h.pdf",width=4,height=3)
+ggplot(test.tmp,aes(x=col,y=dRNA,fill=col))+
+  geom_boxplot(notch=T)+
+  scale_fill_manual(values=yk.col(5)[c(3,2,4)])+theme_bw()+xlab("Tandem 3´UTR switch")+ylab("log2(LPS 4h/LPS 0h)")#+ylim(c(-3,6))
+dev.off()
+t.test(test.tmp$dRNA[test.tmp$col=="To Proximal"],test.tmp$dRNA[test.tmp$col=="To Distal"])
+```
+
+
+#tandem UTR switch gene-level RNA change
+0h vs 1h
+```{r}
+test=final%>%filter(type=="0-1h")%>%filter(pcor!=1&pcor!=(-1))
+
+test.rna=peak%>%ungroup()%>%separate(newid,c("hgnc","ALE"),sep=":",remove = F)%>%
+  group_by(hgnc,time)%>%summarise(sum.rc=sum(readcount))%>%spread(time,sum.rc)%>%mutate(dRNA=log2((`1`+1)/(`0`+1)))%>%select(hgnc,dRNA)
+test.tmp=test%>%separate(newid,c("hgnc","newALE"),sep=":",remove = F)%>%inner_join(test.rna,by="hgnc")
+test.tmp=test.tmp%>%
+  #filter(fdr<0.05&abs(pcor)>0.1)%>%
+  mutate(col=ifelse(fdr<0.05&pcor>0.1,"To Distal",ifelse(fdr<0.05&pcor<(-0.1),"To Proximal","No change")))%>%mutate(col=factor(col,levels=c("No change","To Proximal","To Distal")))
+
+
+pdf("dRNA Gene level vs tandem switch.boxplot_0hvs1h.pdf",width=4,height=3)
+ggplot(test.tmp,aes(x=col,y=dRNA,fill=col))+
+  geom_boxplot(notch=T)+ggtitle("Gene-level RNA level change")+
+  scale_fill_manual(values=yk.col(5)[c(3,2,4)])+theme_bw()+xlab("Tandem 3´UTR switch")+ylab("log2(LPS 1h/LPS 0h)")#+ylim(c(-3,6))
+dev.off()
+t.test(test.tmp$dRNA[test.tmp$col=="To Proximal"],test.tmp$dRNA[test.tmp$col=="To Distal"])
+
+```
+
+
+0h vs 2h
+```{r}
+test=final%>%filter(type=="0-2h")%>%filter(pcor!=1&pcor!=(-1))
+
+test.rna=peak%>%ungroup()%>%separate(newid,c("hgnc","ALE"),sep=":",remove = F)%>%
+  group_by(hgnc,time)%>%summarise(sum.rc=sum(readcount))%>%spread(time,sum.rc)%>%mutate(dRNA=log2((`2`+1)/(`0`+1)))%>%select(hgnc,dRNA)
+test.tmp=test%>%separate(newid,c("hgnc","newALE"),sep=":",remove = F)%>%inner_join(test.rna,by="hgnc")
+test.tmp=test.tmp%>%
+  #filter(fdr<0.05&abs(pcor)>0.1)%>%
+  mutate(col=ifelse(fdr<0.05&pcor>0.1,"To Distal",ifelse(fdr<0.05&pcor<(-0.1),"To Proximal","No change")))%>%mutate(col=factor(col,levels=c("No change","To Proximal","To Distal")))
+
+
+pdf("dRNA Gene level vs tandem switch.boxplot_0hvs2h.pdf",width=4,height=3)
+ggplot(test.tmp,aes(x=col,y=dRNA,fill=col))+
+  geom_boxplot(notch=T)+ggtitle("Gene-level RNA level change")+
+  scale_fill_manual(values=yk.col(5)[c(3,2,4)])+theme_bw()+xlab("Tandem 3´UTR switch")+ylab("log2(LPS 2h/LPS 0h)")#+ylim(c(-3,6))
+dev.off()
+t.test(test.tmp$dRNA[test.tmp$col=="To Proximal"],test.tmp$dRNA[test.tmp$col=="To Distal"])
+
+```
+
+
+0h vs 4h
+```{r}
+test=final%>%filter(type=="0-4h")%>%filter(pcor!=1&pcor!=(-1))
+
+test.rna=peak%>%ungroup()%>%separate(newid,c("hgnc","ALE"),sep=":",remove = F)%>%
+  group_by(hgnc,time)%>%summarise(sum.rc=sum(readcount))%>%spread(time,sum.rc)%>%mutate(dRNA=log2((`4`+1)/(`0`+1)))%>%select(hgnc,dRNA)
+test.tmp=test%>%separate(newid,c("hgnc","newALE"),sep=":",remove = F)%>%inner_join(test.rna,by="hgnc")
+test.tmp=test.tmp%>%
+  #filter(fdr<0.05&abs(pcor)>0.1)%>%
+  mutate(col=ifelse(fdr<0.05&pcor>0.1,"To Distal",ifelse(fdr<0.05&pcor<(-0.1),"To Proximal","No change")))%>%mutate(col=factor(col,levels=c("No change","To Proximal","To Distal")))
+
+
+pdf("dRNA Gene level vs tandem switch.boxplot_0hvs4h.pdf",width=4,height=3)
+ggplot(test.tmp,aes(x=col,y=dRNA,fill=col))+
+  geom_boxplot(notch=T)+ggtitle("Gene-level RNA level change")+
+  scale_fill_manual(values=yk.col(5)[c(3,2,4)])+theme_bw()+xlab("Tandem 3´UTR switch")+ylab("log2(LPS 4h/LPS 0h)")#+ylim(c(-3,6))
+dev.off()
+t.test(test.tmp$dRNA[test.tmp$col=="To Proximal"],test.tmp$dRNA[test.tmp$col=="To Distal"])
+
+```

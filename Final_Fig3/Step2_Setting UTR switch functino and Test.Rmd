@@ -1,0 +1,372 @@
+---
+title: 'Step3: Setting CPS switch test function'
+author: "Yeonui+Kwak"
+date: "8/9/2020"
+output: html_document
+---
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig3/Rcode/")
+
+```
+
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+```
+
+1. Functions needed for UTR switch test
+
+```{R}
+if(!require(coin)){install.packages("coin")}
+if(!require(rcompanion)){install.packages("rcompanion")}
+install.packages("DescTools");
+library(DescTools)
+library(coin);library(rcompanion)
+#install.packages("DescTools")
+#library(DescTools)
+pears.cor=function(table, rscore, cscore)
+{ 
+	dim=dim(table) 
+	rbar=sum(margin.table(table,1)*rscore)/sum(table) 
+	rdif=rscore-rbar 
+	cbar=sum(margin.table(table,2)*cscore)/sum(table) 
+	cdif=cscore-cbar 
+	ssr=sum(margin.table(table,1)*(rdif^2)) 
+	ssc=sum(margin.table(table,2)*(cdif^2)) 
+	ssrc=sum(t(table*rdif)*cdif) 
+	pcor=ssrc/(sqrt(ssr*ssc)) 
+	pcor 
+	M2=(sum(table)-1)*pcor^2
+	result=c(pcor, M2)
+	result
+	} 
+
+```
+
+```{R}
+# Function to apply chisq.test() to tibble groups
+diffCPS.test = function(tm, cn, rc) {
+	cont.t = data.frame(time = tm, cpsNo = cn, readCount = rc) %>%
+		spread(time, readCount)
+	return(chisq.test(cont.t[, -1])$p.value)}
+
+TSI.cor.test=function(cps,tm,rc){
+  cont.t=data.frame(CPS=cps,Time=tm,Readcounts=rc)%>%
+    spread(CPS,Readcounts)
+mat=as.matrix(cont.t[,-1])
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "utrlen"=as.character(c(colnames(mat)))
+))
+
+#t=prop.table(t,margin=1)*100
+t=as.table(round(t,0)) #when you use mean.rc
+x=pears.cor(t,cscore=1:ncol(t),rscore=1:nrow(t))
+#lt <- lbl_test(t, scores = list("utrlen"=1:ncol(t),"time"=1:nrow(t)))
+  return(x[1])
+}
+```
+
+
+Tandem UTR PAS switch.
+dPSI>0.1
+#tandem 3'UTR switch 
+```{R}
+final<-read.table("3pseq.all.temporalCPSsamples.ALE.tandemUTR.UTRlen.annotation.txt",header=T,stringsAsFactors = F)
+id=final%>%group_by(hgnc,ALE)%>%
+  summarise(Tandem_count=n_distinct(Tandem))%>%ungroup()%>%
+  unite("newid",c(hgnc,ALE),sep=":")%>%filter(Tandem_count>1)%>%
+  select(newid,Tandem_count)%>%distinct()
+
+final=final%>%unite("newid",c(hgnc,ALE),sep=":",remove = F)%>%inner_join(id,by="newid")
+id20=final%>%group_by(newid)%>%summarise(sum.rc=sum(readcount))%>%filter(sum.rc>=20)%>%select(newid)
+final=final%>%inner_join(id20,by="newid")
+```
+
+
+```{R}
+diffCPS.test = function(tm, cn, rc) {
+	cont.t = data.frame(time = tm, cpsNo = cn, readCount = rc) %>%
+		spread(time, readCount)
+	return(chisq.test(cont.t[, -1])$p.value)}
+
+##edited TSI.cor.test
+
+TSI.cor.test=function(cps,tm,rc,cpsutrlen){
+  cont.t=data.frame(CPS=cps,Time=tm,Readcounts=rc)%>%
+    spread(CPS,Readcounts)
+  
+  df=data.frame(CPS=cpsutrlen,Time=tm)%>%
+    separate(CPS,c("Tandem","utrlen"),sep=":")%>%
+    select(-Time)%>%arrange(Tandem,utrlen)%>%
+    distinct()%>%mutate(utrlen=as.numeric(utrlen))%>%
+  mutate(Tandem=as.numeric(Tandem))#%>%spread(UTRlen,Readcounts)
+vec=df$Tandem
+names(vec)=df$utrlen
+mat=as.matrix(cont.t[,-1])
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "CPSindex"=as.character(c(colnames(mat)))
+))
+
+#t=prop.table(t,margin=1)*100
+t=as.table(round(t,0)) #when you use mean.rc
+x=pears.cor(t,cscore=as.numeric(names(vec)),rscore=1:nrow(t))
+#lt <- lbl_test(t, scores = list("utrlen"=1:ncol(t),"time"=1:nrow(t)))
+  return(x[1])
+}
+
+```
+
+```{r}
+timelist=list(c(0,1),c(1,2),c(0,2),c(2,4),c(1,4),c(0,4))
+result=list()
+for ( i in 1:6){
+ final.tmp=final%>%filter(time%in%timelist[[i]]) 
+
+cr.pv = final.tmp %>%
+	ungroup() %>%
+	group_by(newid) %>%
+	summarise(pval = diffCPS.test(tm=time,cn=Tandem,rc=readcount))
+
+cr.pv = cr.pv %>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))
+
+cr.pv2 = final.tmp %>%
+	ungroup() %>%unite("tandemutrlen",c(Tandem,utrlen),sep=":",remove=F)%>%
+	group_by(newid) %>%
+	summarise(pcor = TSI.cor.test(cps=Tandem,tm=time, rc=readcount,cpsutrlen=tandemutrlen))
+
+cr.pv=cr.pv%>%inner_join(cr.pv2,by="newid")#%>%inner_join(cr.pv3, by="hgnc")
+
+cr.pv=cr.pv%>%filter_all(all_vars(!is.nan(.)))
+result[[i]]<-cr.pv
+}
+time=c("0-1h","1-2h","0-2h","2-4h","1-4h","0-4h")
+for (i in 1:6){
+ result[[i]]=result[[i]]%>%mutate(type=rep(time[i]) )
+}
+```
+
+Summary of tandem 3'UTR switch
+```{R}
+final=result%>%reduce(bind_rows)
+write.table(final,"tandemUTRswitch.chisqure.test.result.txt",col.names = T,row.names = F,quote=F )
+final%>%
+  filter(fdr<0.1)%>%
+  filter(abs(pcor)>0.1)%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(type,cor)%>%select(newid,cor,type)%>%distinct()%>%summarise(n_distinct(newid))
+
+cat("number of hgnc:ALE with switch in tandem3'UTR")
+final%>%filter(fdr<0.01)%>%filter(abs(pcor)>0.1)%>%ungroup()%>%summarise(n_distinct(newid)) #280
+final%>%filter(fdr<0.01)%>%filter(abs(pcor)>0.1)%>%ungroup()%>%separate(newid,c("hgnc","ale"),sep=":")%>%summarise(n_distinct(hgnc)) #275 genes
+
+final%>%filter(fdr<0.01)%>%filter(abs(pcor)>0.1)%>%ungroup()%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(cor)%>%summarise(n_distinct(newid))
+final%>%filter(fdr<0.01)%>%filter(abs(pcor)>0.1)%>%ungroup()%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(newid)%>%summarise(count=n_distinct(cor))%>%filter(count>=2)%>%select(newid)%>%unlist()
+write.table(final%>%
+  filter(fdr<0.01)%>%
+  filter(abs(pcor)>0.1)%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(cor)%>%select(newid,cor,type,pval,pcor)%>%distinct(),"tandemUTRswitch.chisqure.test.result_passed.txt",col.names = T,row.names = F,quote=F )
+```
+
+```{R}
+t=final%>%group_by(type)%>%filter(fdr<0.01)%>%filter(abs(pcor)>0.1)%>%mutate(direction=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(type,direction)%>%summarise(significant=n())
+#t[12,]=c("1-2h","distal",0)
+t=t%>%ungroup()%>%complete(type,nesting(direction),fill =list(significant=0))%>%mutate(significant=as.numeric(significant))
+write.table(t,"Fig3D_tandemUTRswitch.txt",col.names = T,row.names = F,sep="\t",quote=F)
+
+pdf("Fig3D_hgnc.ALE_tandemUTRswitch.pdf",width=4,height=3)
+ggplot(t,aes(x=type,y=significant,fill=direction,group=direction))+
+  geom_bar(stat="identity")+theme_bw()+xlab("Comparison")+
+  scale_fill_manual(values=yk.col(5)[c(4,2)])+
+theme_bw()+ylab("Number of tandem 3'UTR shift")+xlab("Comparison")
+#geom_col(position = position_dodge2(preserve = "single")) 
+#scale_fill_manual(values=yk.col(5)[c(4,2)])
+dev.off()
+#final%>%separate(newid,c("hgnc","ALE"),sep=":")%>%filter(hgnc=="LAMP2")
+
+```
+
+Tandem UTR switch Example
+```{R}
+# install.packages("devtools")
+#devtools::install_github("haleyjeppson/ggmosaic")
+library(ggmosaic)
+#install.packages("vcd")
+library("vcd")
+library("graphics")
+final<-read.table("3pseq.all.temporalCPSsamples.ALE.tandemUTR.UTRlen.annotation.txt",header=T,stringsAsFactors = F)
+id=final%>%group_by(hgnc,ALE)%>%
+  summarise(Tandem_count=n_distinct(Tandem))%>%ungroup()%>%
+  unite("newid",c(hgnc,ALE),sep=":")%>%filter(Tandem_count>1)%>%
+  select(newid,Tandem_count)%>%distinct()
+
+final=final%>%unite("newid",c(hgnc,ALE),sep=":",remove = F)%>%inner_join(id,by="newid")
+id20=final%>%group_by(newid)%>%summarise(sum.rc=sum(readcount))%>%filter(sum.rc>=20)%>%select(newid)
+final=final%>%inner_join(id20,by="newid")
+#f=final%>%ungroup()%>%filter(newid=="NCL:1")%>%select(relposfromALEpos,time,mean.rc)%>%spread(relposfromALEpos,mean.rc)
+#f=final%>%ungroup()%>%filter(newid=="NCL:1")%>%select(Tandem,time,readcount)%>%spread(Tandem,readcount)
+#f=final%>%ungroup()%>%filter(newid=="YBX1:1")%>%select(Tandem,time,readcount)%>%spread(Tandem,readcount)
+f=final%>%ungroup()%>%filter(newid=="DAZAP1:1")%>%select(Tandem,time,readcount)%>%spread(Tandem,readcount)
+f=final%>%ungroup()%>%filter(newid=="MSRA:1")%>%select(Tandem,time,readcount)%>%spread(Tandem,readcount)
+
+f=f%>%mutate(time=as.numeric(time))
+mat=as.matrix(f[c(1:4),-1])
+rownames(mat)=c(0,1,2,4)
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "3´UTR index"=colnames(mat)))
+#t=prop.table(t,margin=1)*100
+t=as.table(round(t))
+```
+
+
+```{R}
+#lt <- lbl_test(t, scores = list("3´UTR index"=1:ncol(t),"time"=1:nrow(t)))
+cmh_test(t)#Asymptotic Generalized Cochran-Mantel-Haenszel Test: p-value = 0.0002043
+spineplot(t)
+
+
+pdf("DAZAP1_SWITCHTODistalUTR_mosaic.pdf",width=4.5,height=6)
+    mosaicplot((t), shade = F, las=1,cex.axis = 0.66,
+           main = "Switch in tandem 3'UTR for DAZAP1",color = yk.col(ncol(t))[1:ncol(t)],labeling_args = list(
+     gp_labels = gpar(fontsize = 12, fontface = 3),
+     gp_varnames = gpar(fontsize = 16, fontface = 2)))
+
+dev.off()
+
+
+assoc(t[,(ncol(t)-5):ncol(t)], shade = T, las=1)
+pdf("DAZAP1_horizontal.pdf",width=4,height=6)
+assocplot(t, col=c("red","blue"),space =0.5)
+dev.off()
+
+
+pdf("MSRA_SWITCHTODistalUTR_mosaic.pdf",width=4.5,height=5)
+    mosaicplot((t), shade = F, las=1,cex.axis = 0.66,
+           main = "Switch in tandem 3'UTR for MSRA",color = yk.col(ncol(t))[1:ncol(t)],labeling_args = list(
+     gp_labels = gpar(fontsize = 12, fontface = 3),
+     gp_varnames = gpar(fontsize = 16, fontface = 2)))
+
+dev.off()
+
+assoc(t[,(ncol(t)-2):ncol(t)], shade = T, las=1)
+
+pdf("MSRA_horizontal.pdf",width=4,height=5)
+assocplot(t, col=c("red","blue"),space =0.5)
+dev.off()
+```
+
+Gene ontogy enrichment analysis table
+```{R}
+tmp=final%>%unite("newid",c(hgnc,ALE),sep=":")
+final2=result%>%reduce(bind_rows)
+final2%>%filter_all(all_vars(!is.nan(.)))%>%filter(fdr<0.01)%>%filter((pcor)>0.1)%>%select(newid)%>%separate(newid,c("hgnc","ALE"),sep=":")%>%select(hgnc)%>%n_distinct()
+final2%>%select(newid)%>%arrange(newid)%>%separate(newid,c("hgnc","ALE"),sep=":")%>%select(hgnc)%>%n_distinct()
+
+
+#switchto distal genes
+list1=final2%>%filter_all(all_vars(!is.nan(.)))%>%filter(fdr<0.01)%>%filter((pcor)>0.1)%>%select(newid)
+write.table(
+tmp%>%inner_join(list1,by="newid")%>%arrange(newid)%>%distinct_at(vars(newid),.keep_all = T)%>%select(id)%>%distinct()%>%separate(id, into = paste("V", 1:2, sep = ""),sep="\\.")%>%select(V1),"TSI.result.switchtoDistal.tandem.lengthened.txt",col.names = F,row.names = F,quote=F,sep="\t")
+
+#switch to proximal genes
+list1=final2%>%filter_all(all_vars(!is.nan(.)))%>%filter(fdr<0.01)%>%filter((pcor)<(-0.1))%>%select(newid)
+
+write.table(
+tmp%>%inner_join(list1,by="newid")%>%arrange(newid)%>%distinct_at(vars(newid),.keep_all = T)%>%select(id)%>%distinct()%>%separate(id, into = paste("V", 1:2, sep = ""),sep="\\.")%>%select(V1),"TSI.result.switchtoProximal.tandem.shortened.txt",col.names = F,row.names = F,quote=F,sep="\t")
+
+#background
+tmp%>%arrange(newid)%>%distinct_at(vars(newid),.keep_all = T)%>%select(id)%>%separate(id, into = paste("V", 1:2, sep = ""),sep="\\.")
+write.table(tmp%>%arrange(newid)%>%distinct_at(vars(newid),.keep_all = T)%>%select(id)%>%separate(id, into = paste("V", 1:2, sep = ""),sep="\\.")%>%select(V1),"TSI.analysis.background_14207ALE.txt",col.names = F,row.names = F,quote=F,sep="\t")
+
+
+```
+
+
+
+
+
+
+
+
+
+```{R}
+
+final%>%filter_all(all_vars(!is.nan(.)))%>%filter(fdr<0.01)%>%filter((pcor)>(0.1))%>%
+separate(newid,c("hgnc","ALE"),sep=":")%>%filter(hgnc %in% c("ARF1","ATP1B3","BTG2","YBX1","AHCYL1","CLIC1","COL6A1","CSTB","EIF3H","FABP4","GRB2","LAMP2","MSRA","psmd1","PSMD12","RHOA","SAR1A","SNX3","TM7SF3","TMED4","TUBB"))
+
+```
+Unused functions
+```{R}
+TSI.test=function(cps,tm,rc){
+  cont.t=data.frame(CPS=cps,Time=tm,Readcounts=rc)%>%
+    spread(CPS,Readcounts)
+mat=as.matrix(cont.t[c(1:4),-1])
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "utrlen"=as.character(c(colnames(mat)))
+))
+#t=prop.table(t,margin=1)*100
+t=as.table(round(t,0))
+lt <- lbl_test(t, scores = list("utrlen"=1:ncol(t),"time"=1:nrow(t)))
+  return(lt@statistic@teststatistic)
+}
+
+TSI.M2.test=function(cps,tm,rc){
+  cont.t=data.frame(CPS=cps,Time=tm,Readcounts=rc)%>%
+    spread(CPS,Readcounts)
+mat=as.matrix(cont.t[,-1])
+
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "utrlen"=as.character(c(colnames(mat)))
+))
+#t=prop.table(t,margin=1)*100
+t=as.table(round(t,0))
+x=pears.cor(t,cscore=1:ncol(t),rscore=1:nrow(t))
+#lt <- lbl_test(t, scores = list("utrlen"=1:ncol(t),"time"=1:nrow(t)))
+  return(x[2])
+}
+```
+```{R}
+pdf("YBX1_SWITCHTODistalUTR_mosaic.pdf",width=4.5,height=6)
+    mosaicplot((t), shade = F, las=1,cex.axis = 0.66,
+           main = "Switch in tandem 3'UTR for YBX1",color = yk.col(ncol(t))[1:ncol(t)],labeling_args = list(
+     gp_labels = gpar(fontsize = 12, fontface = 3),
+     gp_varnames = gpar(fontsize = 16, fontface = 2)))
+
+dev.off()
+
+# plot just a subset of the table
+
+assoc(t[,(ncol(t)-5):ncol(t)], shade = T, las=1)
+pdf("YBX1_horizontal.pdf",width=4,height=6)
+assocplot(t, col=c("red","blue"),space =0.5)
+dev.off()
+
+
+pdf("NCL_SWITCHTODistalUTR_mosaic.pdf",width=4.5,height=6)
+    mosaicplot((t), shade = F, las=1,cex.axis = 0.66,
+           main = "Switch in tandem 3'UTR for NCL",color = yk.col(ncol(t))[1:ncol(t)],labeling_args = list(
+     gp_labels = gpar(fontsize = 12, fontface = 3),
+     gp_varnames = gpar(fontsize = 16, fontface = 2)))
+
+dev.off()
+
+pdf("NCL_horizontal.pdf",width=4,height=6)
+assocplot(t, col=c("red","blue"),space =0.5)
+dev.off()
+
+```
+
