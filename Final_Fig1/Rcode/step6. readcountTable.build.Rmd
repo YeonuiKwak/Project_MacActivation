@@ -1,0 +1,142 @@
+---
+title: "Step5_Readcount of tempral samples at all CPSs"
+author: "Yeonui+Kwak"
+date: "8/7/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig1/Rcode")
+
+```
+
+2. Setup color and load packages.
+```{r}
+#install.packages("raster")
+library(RColorBrewer)
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+library(gridExtra)
+source("~/Desktop/Publication_Mar/Final_Supplement/Rsourcecode/scatterPlot.R")
+```
+Alternative 1
+
+3. ReadcountData.
+```{R}
+#mine
+cps1<-read.table("cps.rc.0h.r1.txt", stringsAsFactors = F, header=F)
+cps2<-read.table("cps.rc.0h.r2.txt", stringsAsFactors = F, header=F)
+cps3<-read.table("cps.rc.1h.r1.txt", stringsAsFactors = F, header=F)
+cps4<-read.table("cps.rc.1h.r2.txt", stringsAsFactors = F, header=F)
+cps5<-read.table("cps.rc.2h.r1.txt", stringsAsFactors = F, header=F)
+cps6<-read.table("cps.rc.2h.r2.txt", stringsAsFactors = F, header=F)
+cps7<-read.table("cps.rc.4h.r1.txt", stringsAsFactors = F, header=F)
+cps8<-read.table("cps.rc.4h.r2.txt", stringsAsFactors = F, header=F)
+
+cps1=cps1%>%select(V4,V7)
+cps2=cps2%>%select(V4,V7)
+cps3=cps3%>%select(V4,V7)
+cps4=cps4%>%select(V4,V7)
+cps5=cps5%>%select(V4,V7)
+cps6=cps6%>%select(V4,V7)
+cps7=cps7%>%select(V4,V7)
+cps8=cps8%>%select(V4,V7)
+cps.all.full.window=read.table("cps.all.full.window.bed", stringsAsFactors = F, header=F)
+cps.all.full.window=cps.all.full.window%>%select(V4)
+head(cps.all.full.window)
+l=list(cps.all.full.window,cps1,cps2,cps3,cps4,cps5,cps6,cps7,cps8)
+cps=l%>%reduce(left_join,by="V4")
+str(cps)
+colnames(cps)=c("CPSid","X0h.r1","X0h.r2","X1h.r1","X1h.r2","X2h.r1","X2h.r2","X4h.r1","X4h.r2")
+cps=cps%>% replace(is.na(.), 0)
+nrow(cps)
+cps=(cps)%>%select(-X0h.r2)
+write.table(cps,"all.cps.positions.readcount.txt",col.names=T,quote=F)
+
+#CPM normalization
+cps[,2:8]=sweep((cps[,2:8]), 2,colSums(cps[,2:8]) , "/")
+cps[,2:8]=cps[,2:8]*1000000
+colSums(cps[2:8])
+#cps=cps%>%filter_at(vars(contains("h.r")),all_vars(.>=1))
+nrow(cps)
+#in the ref regions
+
+cps=cps.ref%>%inner_join(cps,by="CPSid")
+cps%>%filter(hgnc=="TNF")
+cps%>%ungroup()%>%summarise(n_distinct(CPSid))
+cps%>%ungroup()%>%summarise(n_distinct(id))
+cps%>%ungroup()%>%summarise(n_distinct(hgnc))
+
+```
+4. Manipulate Data
+4.1
+```{R}
+cps=cps%>%select(-chr,-readcount)
+head(cps)
+cps=cps %>%gather("sample","readcount",-CPSid,-CPSpos,-id,-strand,-cpsNo,-hgnc,-refpos,-strand,-cps.ratio.perhgnc,-relpos)%>%
+  separate(sample,c("time","rep"),sep="h\\.r")%>%
+  mutate(time=as.numeric(substring(time,2)))
+cps%>%summarise(n_distinct(id))
+cps%>%summarise(n_distinct(hgnc))
+head(cps)
+cps%>%filter(hgnc=="TNF")
+write.table(cps,"cpspeak.readcount.table.2020.06.11.3UTR1KB.ext.txt",col.names = T,quote=F,row.names = F, sep="\t")
+```
+Alternative 2: Use internal priming removed collapsed temporal bed
+
+```{R}
+cps1<-read.table("cps.rc.0h.txt", stringsAsFactors = F, header=F)
+cps2<-read.table("cps.rc.1h.txt", stringsAsFactors = F, header=F)
+cps3<-read.table("cps.rc.2h.txt", stringsAsFactors = F, header=F)
+cps4<-read.table("cps.rc.4h.txt", stringsAsFactors = F, header=F)
+cps1=cps1%>%select(V4,V7)
+cps2=cps2%>%select(V4,V7)
+cps3=cps3%>%select(V4,V7)
+cps4=cps4%>%select(V4,V7)
+
+l=list(cps1,cps2,cps3,cps4)
+cps=l%>%reduce(left_join,by="V4")
+nrow(cps)
+colnames(cps)=c("CPSid","X0h","X1h","X2h","X4h")
+cps=cps%>% replace(is.na(.), 0)
+nrow(cps)
+write.table(cps,"all.cps.positions.readcount.txt",col.names=T,quote=F)
+```
+No running the code below: Because it was already normalized after internal priming removal
+```{R}
+#CPM normalization
+cps[,2:8]=sweep((cps[,2:8]), 2,colSums(cps[,2:8]) , "/")
+cps[,2:8]=cps[,2:8]*1000000
+colSums(cps[2:8])
+#cps=cps%>%filter_at(vars(contains("h.r")),all_vars(.>=1))
+nrow(cps)
+```
+
+
+
+
+4. Manipulate Data
+4.1
+```{R}
+cps.ref=read.table("final.30980cps.in.3UTR.1kb.ext.txt",stringsAsFactors = F,header = T)
+cps=cps.ref%>%inner_join(cps,by="CPSid")
+cps%>%filter(hgnc=="TNF")%>%distinct_at(vars(CPSid))
+cps%>%ungroup()%>%summarise(n_distinct(CPSid))
+cps%>%ungroup()%>%summarise(n_distinct(id))
+cps%>%ungroup()%>%summarise(n_distinct(hgnc))
+cps=cps%>%select(-chr,-readcount)
+head(cps)
+substring("x0r",2,2)
+cps=cps %>%gather("time","readcount",-CPSid,-CPSpos,-id,-strand,-hgnc,-refpos,-cps.ratio.perhgnc,-relpos)%>%
+  mutate(time=as.numeric(substring(time,2,2)))
+cps%>%summarise(n_distinct(id))
+cps%>%summarise(n_distinct(hgnc))
+head(cps)
+cps%>%filter(hgnc=="TNF")
+write.table(cps,"cpspeak.readcount.table.2020.08.07.3UTR1KB.ext.txt",col.names = T,quote=F,row.names = F, sep="\t")
+```

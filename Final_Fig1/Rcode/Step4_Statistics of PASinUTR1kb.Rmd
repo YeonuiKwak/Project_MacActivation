@@ -1,0 +1,80 @@
+---
+title: "Statistics of CPS in 3’UTR"
+author: "Yeonui+Kwak"
+date: "8/7/2020"
+output: html_document
+---
+
+2.Filter CPS in 3UTR
+
+```{r}
+#cps in ref region (+/-300 nucleotides))
+cps.ref<-read.table("cpsin3UTR1kb.bed", stringsAsFactors = F, header=F)
+cps.ref=cps.ref%>%separate(V4,c("id","chr","CPSpos"),sep=":")%>%unite("CPSid",c(chr,CPSpos),sep=":")
+head(cps.ref)
+#add gene name;Reference position.
+ref<-read.table("./Reference/transcripts.bed13",header = F,stringsAsFactors = F)
+ref=ref%>%rename("id"=V4)%>%rename("hgnc"=V13)%>%
+  mutate(V2=as.numeric(V2))%>%
+  mutate(V3=as.numeric(V3))%>%
+  mutate("refpos"=ifelse(V6=="+",V3-1,V2))%>%select("id","hgnc","refpos")
+
+#
+cps.ref=cps.ref%>%inner_join(ref,by="id")
+cps.ref%>%filter(id=="ENST00000454824.5")
+cps.ref%>%summarise(n_distinct(hgnc))
+cps.ref%>%summarise(n_distinct(id))
+cps.ref%>%summarise(n_distinct(CPSid))
+
+#cps.ref=cps.ref%>%rename(cpsNo=CPSid)%>%unite("CPSid",c(V1,V2),sep=":",remove = F)#%>%summarise(n_distinct(CPSid))
+head(cps.ref)
+#cps.ref=cps.ref%>%rename(refpos=refpos.y)%>%select(-refpos.x)
+cps.ref=cps.ref%>%select(-V3)
+cps.ref=cps.ref%>%separate(CPSid,c("chr","CPSpos"),remove = F)
+cps.ref=cps.ref%>%
+  mutate(CPSpos=as.numeric(CPSpos))%>%
+  mutate(relpos=CPSpos-refpos)%>%mutate(relpos=ifelse(V6=="+",relpos,-relpos))
+cps.ref=cps.ref%>%select(-V2)
+cps.ref=cps.ref%>%select(-chr)
+colnames(cps.ref)=c("chr","id","CPSid","CPSpos","readcount","strand","hgnc","refpos","relpos")
+RATIO=cps.ref%>%ungroup()%>%arrange(hgnc,CPSid,abs(relpos))%>%
+  distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%
+  group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))
+cps.ref=cps.ref%>%
+  ungroup()%>%inner_join(RATIO%>%ungroup()%>%select(CPSid,ratio),by="CPSid")
+
+cps.ref=cps.ref%>%rename(cps.ratio.perhgnc=ratio)
+cps.ref%>%ungroup()%>%summarise(n_distinct(CPSid))
+#for 1kb extension
+
+write.table(cps.ref,"final.30980cps.in.3UTR.1kb.ext.txt",col.names = T,row.names = F,sep="\t",quote=F)
+```
+
+#Statistics.
+```{R}
+cps.ref3UTR1kb=read.table("final.30980cps.in.3UTR.1kb.ext.txt",stringsAsFactors = F, header=T)
+cps.refall=read.table("cpsinallregions.bed",stringsAsFactors = F, header=F)
+cps.refall=cps.refall%>%separate(V4,c("id","chr","CPSpos"),sep=":")%>%unite("CPSid",c(chr,CPSpos),sep=":")
+cps.refall%>%summarise(n_distinct(CPSid))
+cps.all=read.table("cps.all.full.window.internalpAremoved.gt5.bed", stringsAsFactors = F, header=F)
+
+cps.all.stat=cps.all%>%mutate("location"=ifelse(V4 %in% cps.ref$CPSid,"3´UTR+1kb",ifelse(V4 %in% cps.refall$CPSid,"Exon or Intron", "Intergenic")))%>%group_by(location)%>%summarise("count"=n())
+sum(cps.all.stat$count)
+pdf("Genomic locations of the poly(A) sites_AfterRemovinginternalpA.pdf",width=3,height=3)
+ggplot(cps.all.stat,aes(x=location,y=count))+geom_bar(stat="identity")+theme_bw()+xlab("Genomic location")+ylab("Number of poly(A) sites")
+dev.off()
+
+cat("Number of hgnc that have CPSs in their 3' UTR 1kb extension :", 10589)
+cps.all%>%rename(CPSid=V4)%>%
+  inner_join(cps.ref%>%select(CPSid,hgnc),by="CPSid")%>%
+  mutate("location"=ifelse(CPSid %in% cps.ref$CPSid,"3´UTR+1kb","Elsewhere"))%>%filter(location=="3´UTR+1kb")%>%summarise(n_distinct(hgnc))
+```
+
+```{R}
+cat("Number of all annotated PAS sites",30980)
+cps.ref%>%summarise(n_distinct(CPSid))
+cps.ref%>%ungroup()%>%arrange(hgnc,id,refpos)%>%
+  distinct_at(vars(hgnc,refpos),.keep_all = T)%>%nrow()
+```
+
+

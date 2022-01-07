@@ -1,0 +1,152 @@
+---
+title: "F2S0:scatterplot:CPS-seq scattorplot"
+author: "Yeonui+Kwak"
+date: "6/26/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig2/Tmp0")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+3.Load the samples.
+```{R}
+cps<-read.table("all.cps.positions.readcount.txt",header=T, stringsAsFactors = F)
+
+```
+
+```{R}
+cps1<-read.table("cps.rc.0h.r1.txt", stringsAsFactors = F, header=F)
+cps2<-read.table("cps.rc.0h.r2.txt", stringsAsFactors = F, header=F)
+cps3<-read.table("cps.rc.1h.r1.txt", stringsAsFactors = F, header=F)
+cps4<-read.table("cps.rc.1h.r2.txt", stringsAsFactors = F, header=F)
+cps5<-read.table("cps.rc.2h.r1.txt", stringsAsFactors = F, header=F)
+cps6<-read.table("cps.rc.2h.r2.txt", stringsAsFactors = F, header=F)
+cps7<-read.table("cps.rc.4h.r1.txt", stringsAsFactors = F, header=F)
+cps8<-read.table("cps.rc.4h.r2.txt", stringsAsFactors = F, header=F)
+
+cps1=cps1%>%select(V4,V7)
+cps2=cps2%>%select(V4,V7)
+cps3=cps3%>%select(V4,V7)
+cps4=cps4%>%select(V4,V7)
+cps5=cps5%>%select(V4,V7)
+cps6=cps6%>%select(V4,V7)
+cps7=cps7%>%select(V4,V7)
+cps8=cps8%>%select(V4,V7)
+cps.all.full.window=read.table("cps.all.full.window.internalpAremoved.bed", stringsAsFactors = F, header=F)
+cps.all.full.window=cps.all.full.window%>%select(V4)
+head(cps.all.full.window)
+l=list(cps.all.full.window,cps1,cps2,cps3,cps4,cps5,cps6,cps7,cps8)
+cps=l%>%reduce(left_join,by="V4")
+str(cps)
+colnames(cps)=c("CPSid","X0h.r1","X0h.r2","X1h.r1","X1h.r2","X2h.r1","X2h.r2","X4h.r1","X4h.r2")
+cps=cps%>% replace(is.na(.), 0)
+nrow(cps)
+#CPM normalization
+cps[,2:9]=sweep((cps[,2:9]), 2,colSums(cps[,2:9]) , "/")
+cps[,2:9]=cps[,2:9]*1000000
+colSums(cps[2:9])
+#cps=(cps)%>%select(-X0h.r2)
+write.table(cps,"all.cps.positions.readcount.txt",col.names=T,quote=F)
+
+
+```
+4. Draw a scatterplot between 0h and 1h.
+```{R}
+head(cps2)
+cps2=cps%>%ungroup()%>%filter(rowSums(.[2:9])>=5)
+nrow(cps2)
+t=cps2%>% select(X0h.r1,X0h.r2)%>%mutate(x=X0h.r1+1,y=X0h.r2+1)%>%filter(x>=1&y>=1)
+cat("correlation",cor(t$x,t$y,method = "spearman"))
+t=t%>%mutate(density = densCols(log(x)/log(10),log(y)/log(10),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+pdf("0and0:3Pseq_replicates_scattorplot.pdf", width = 3, height = 3)
+ggplot(t, aes(y = log10(y), x = log10(x))) + 
+    geom_point(aes(col = density), size=0.2) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="3p-seq.rep1.0h (nt)", y ="3p-seq.rep2.0h (nt)")+xlim(c(-0.3,5))+ylim(c(-0.3,5))+
+  #geom_abline(slope = 1, intercept = 20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = -20,linetype="dashed")+
+  geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")#+
+  #ggtitle("TED-seq: 0h")
+dev.off()
+
+
+t=cps2%>% select(X1h.r1,X1h.r2)%>%mutate(x=X1h.r1+1,y=X1h.r2+1)%>%filter(x>=1,y>=1)
+cat("correlation",cor(t$x,t$y))
+t=t%>%mutate(density = densCols(log(x)/log(10),log(y)/log(10),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+
+pdf("1and1:3pseq_replicates_scattorplot.pdf", width = 3, height = 3)
+ggplot(t, aes(y = log2(y), x = log2(x))) + 
+    geom_point(aes(col = density), size=0.2) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="3p-seq.rep1.1h (nt)", y ="3p-seq.rep2.1h (nt)")+xlim(c(-0.3,15))+ylim(c(-0.3,15))+
+  #geom_abline(slope = 1, intercept = 20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = -20,linetype="dashed")+
+  geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")
+  #ggtitle("TED-seq: 0h")
+dev.off()
+
+
+t=cps2%>% select(X2h.r1,X2h.r2)%>%mutate(x=X2h.r1+1,y=X2h.r2+1)%>%filter(x>=1,y>=1)
+cat("correlation",cor(t$x,t$y))
+cat("correlation",cor(t$x,t$y,method = "spearman"))
+t=t%>%mutate(density = densCols(log(x)/log(10),log(y)/log(10),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+pdf("2and2:3pseq_replicates_scattorplot.pdf", width = 3, height = 3)
+ggplot(t, aes(y = log2(y), x = log2(x))) + 
+    geom_point(aes(col = density), size=0.2) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="3p-seq.rep1.2h (nt)", y ="3p-seq.rep2.2h (nt)")+xlim(c(-0.3,15))+ylim(c(-0.3,15))+
+  #geom_abline(slope = 1, intercept = 20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = -20,linetype="dashed")+
+  geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")
+  #ggtitle("TED-seq: 0h")
+dev.off()
+
+
+t=cps2%>% select(X4h.r1,X4h.r2)%>%mutate(x=X4h.r1+1,y=X4h.r2+1)%>%filter(x>=1,y>=1)
+cat("correlation",cor(t$x,t$y))
+t=t%>%mutate(density = densCols(log(x)/log(10),log(y)/log(10),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+pdf("4and4:3pseq_replicates_scattorplot.pdf", width = 3, height = 3)
+ggplot(t, aes(y = log2(y), x = log2(x))) + 
+    geom_point(aes(col = density), size=0.2) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="3p-seq.rep1.4h (nt)", y ="3p-seq.rep2.4h (nt)")#+xlim(c(0,300))+ylim(c(0,300))#+
+  #geom_abline(slope = 1, intercept = 20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = -20,linetype="dashed")+
+  geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")
+  #ggtitle("TED-seq: 0h")
+dev.off()
+
+```
