@@ -1,0 +1,262 @@
+---
+title: "F5S6:Transcription No change genes: Distribution of PAL change"
+author: "Yeonui+Kwak"
+date: "6/16/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig5/Tmp6")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+
+3. Load data
+```{R}
+
+pal<-read.table("custom.meanPAL.acrossalltimepoints.txt",sep="\t",header=T, stringsAsFactors = F)
+colnames(pal)=c("newid",paste("TED",c(0,1,2,4),sep = "_"))
+pal=pal%>%separate(newid,c("id","refpos","CPSpos"),sep=":")%>%unite("newid",c(id,CPSpos),sep=":",remove=F)
+pal
+rna<-read.table("3pseq.all.temporalCPSsamples.ALE.tandemUTR.annotation.txt",header=T, stringsAsFactors = F)
+rna=rna%>%unite("newid",c(id,CPSpos),sep = ":")%>%select(hgnc,newid,mean.rc,time)%>%spread(time,mean.rc)
+head(rna)
+colnames(rna)=c("hgnc","newid",paste("CPS",c(0,1,2,4),sep = "_"))
+
+txn<-read.table("finalPRO_log2RPKM.txt",sep="\t",header=T, stringsAsFactors = F)
+colnames(txn)=c("id",paste("PRO",c(0,1,2,4),sep = "_"))
+colnames(pal);colnames(rna);colnames(txn)
+all=pal%>%inner_join(rna,by="newid")%>%inner_join(txn,by="id")
+cat("total number of genes in all three datasets:",nrow(all))
+nrow(all)
+write.table(all,"PRO_TED_CPS.readcounttable.txt",col.names = T,row.names = F,sep="\t",quote = F) 
+#cps,ted custom version.
+
+```
+
+
+
+4. Manipulate the data:
+1)select genes with no TXN change between 0 and 4h.
+2)Calculate dPAL between 0 and 1h.
+3)Box plot or histdot.
+
+```{r}
+sample=all%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_1and2"=PRO_2-PRO_1)%>%mutate("dPRO_2and4"=PRO_4-PRO_2)%>%mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_0and1"=TED_1-TED_0)%>%select(id,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5),"Txn:NC","Txn"))%>%
+  #mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.)&abs(dPRO_1and2)<(0.2)&abs(dPRO_2and4)<(0.2),"Txn:NC","Txn"))%>%
+  select(-dPRO_0and1,-dPRO_1and2,-dPRO_2and4)%>%
+  mutate("dTED_group"=ifelse(dTED_0and1<=(-10),"DN",ifelse(dTED_0and1>=10,"UP","NC")))%>%
+  group_by(dPRO_group)%>%
+  #sample_n(1000)%>%
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+  filter(dPRO_group=="Txn:NC")
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.25),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.75),"UP","NS")))%>%ungroup()%>%
+ # group_by(dTED_group,dCPS_group)%>%
+#  sample_n(25)%>%ungroup()%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NS","UP")))
+nrow(sample)
+```
+
+5. Draw plot
+
+```{R}
+col = yk.col(10)[c(3,5,7)] 
+
+pdf("Fig6F_0hand1h_Txn:NC_dPAL_BOXPLOT.pdf",width=3.3,height=2.5)
+ggplot(sample,aes(y=dTED_0and1,x=dPRO_group))+ geom_quasirandom(method = "smiley",aes(col=dTED_group),size=0.5)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"PAL (nt)"))+xlab("0h vs 1h")+ggtitle( expression("Genes with no "*italic(Delta)*"Txn (0 h vs 1 h)"))+ylim(c(-50,50))+labs(col=expression(italic(Delta)*"PAL"))
+#+geom_boxplot(alpha=0.1, color="black", width=.3)
+dev.off()
+```
+1 vs 2 h
+```{r}
+sample=all%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_1and2"=PRO_2-PRO_1)%>%mutate("dPRO_2and4"=PRO_4-PRO_2)%>%mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_1and2"=TED_2-TED_1)%>%
+  select(id,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_1and2)<(0.5),"Txn:NC","Txn"))%>%
+  #mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.)&abs(dPRO_1and2)<(0.2)&abs(dPRO_2and4)<(0.2),"Txn:NC","Txn"))%>%
+  select(-dPRO_0and1,-dPRO_1and2,-dPRO_2and4)%>%
+  mutate("dTED_group"=ifelse(dTED_1and2<=(-10),"DN",ifelse(dTED_1and2>=10,"UP","NC")))%>%
+  group_by(dPRO_group)%>%
+  #sample_n(1000)%>%
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+  filter(dPRO_group=="Txn:NC")
+nrow(sample)
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.25),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.75),"UP","NS")))%>%ungroup()%>%
+ # group_by(dTED_group,dCPS_group)%>%
+#  sample_n(25)%>%ungroup()%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NS","UP")))
+
+```
+
+5. Draw plot
+
+```{R}
+col = yk.col(10)[c(3,5,7)] 
+
+pdf("Fig6F_1hand2h_Txn:NC_dPAL_BOXPLOT.pdf",width=3.3,height=2.5)
+ggplot(sample,aes(y=dTED_1and2,x=dPRO_group))+ geom_quasirandom(method = "smiley",aes(col=dTED_group),size=0.5)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"PAL (nt)"))+xlab("0h vs 1h")+ggtitle( expression("Genes with no "*italic(Delta)*"Txn (1 h vs 2 h)"))+ylim(c(-50,50))+labs(col=expression(italic(Delta)*"PAL"))
+#+geom_boxplot(alpha=0.1, color="black", width=.3)
+dev.off()
+```
+2 h vs 4 h
+
+```{r}
+sample=all%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_1and2"=PRO_2-PRO_1)%>%mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_2and4"=TED_4-TED_2)%>%
+  select(id,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_2and4)<(0.5),"Txn:NC","Txn"))%>%
+  #mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.)&abs(dPRO_1and2)<(0.2)&abs(dPRO_2and4)<(0.2),"Txn:NC","Txn"))%>%
+  select(-dPRO_0and1,-dPRO_1and2,-dPRO_2and4)%>%
+  mutate("dTED_group"=ifelse(dTED_2and4<=(-10),"DN",ifelse(dTED_2and4>=10,"UP","NC")))%>%
+  group_by(dPRO_group)%>%
+  #sample_n(1000)%>%
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+  filter(dPRO_group=="Txn:NC")
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.25),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.75),"UP","NS")))%>%ungroup()%>%
+ # group_by(dTED_group,dCPS_group)%>%
+#  sample_n(25)%>%ungroup()%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NS","UP")))
+
+```
+
+5. Draw plot
+
+```{R}
+col = yk.col(10)[c(3,5,7)] 
+
+pdf("Fig6F_2hand4h_Txn:NC_dPAL_BOXPLOT.pdf",width=3.3,height=2.5)
+ggplot(sample,aes(y=dTED_2and4,x=dPRO_group))+ geom_quasirandom(method = "smiley",aes(col=dTED_group),size=0.5)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"PAL (nt)"))+xlab("0h vs 1h")+ggtitle( expression("Genes with no "*italic(Delta)*"Txn (2 h vs 4 h)"))+ylim(c(-50,50))+labs(col=expression(italic(Delta)*"PAL"))
+#+geom_boxplot(alpha=0.1, color="black", width=.3)
+dev.off()
+```
+0 vs 4h
+```{r}
+sample=all%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_1and2"=PRO_2-PRO_1)%>%mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_1and2"=CPS_1-CPS_0)%>%
+  mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_0and4"=TED_4-TED_0)%>%
+  select(id,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_1and2)<(0.5)&abs(dPRO_2and4)<(0.5)&abs(dPRO_0and4)<0.5,"Txn:NC","Txn"))%>%
+  select(-dPRO_0and1,-dPRO_1and2,-dPRO_2and4)%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<=(-10),"DN",ifelse(dTED_0and4>=10,"UP","NC")))%>%
+  group_by(dPRO_group)%>%
+  #sample_n(1000)%>%
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+  filter(dPRO_group=="Txn:NC")
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.25),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.75),"UP","NS")))%>%ungroup()%>%
+ # group_by(dTED_group,dCPS_group)%>%
+#  sample_n(25)%>%ungroup()%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NS","UP")))
+nrow(sample)
+```
+```{R}
+col = yk.col(10)[c(3,5,7)] 
+
+pdf("Fig6F_0hand4h_Txn:NC_dPAL_BOXPLOT.pdf",width=3.3,height=2.5)
+ggplot(sample,aes(y=dTED_0and4,x=dPRO_group))+ geom_quasirandom(method = "smiley",aes(col=dTED_group),size=0.5)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"PAL (nt)"))+xlab("0h vs 4h")+ggtitle( expression("Genes with no "*italic(Delta)*"Txn (0 h vs 4 h)"))+ylim(c(-50,50))+labs(col=expression(italic(Delta)*"PAL"))
+#+geom_boxplot(alpha=0.1, color="black", width=.3)
+dev.off()
+```
+
+
+0 VS 2 h
+```{r}
+sample=all%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_0and2"=PRO_2-PRO_0)%>%
+  mutate("dTED_0and2"=TED_2-TED_0)%>%
+  select(id,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_1and2)<(0.5)&abs(dPRO_0and2)<(0.5),"Txn:NC","Txn"))%>%
+  mutate("dTED_group"=ifelse(dTED_0and2<=(-10),"DN",ifelse(dTED_0and2>=10,"UP","NC")))%>%
+  group_by(dPRO_group)%>%
+  #sample_n(1000)%>%
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+  filter(dPRO_group=="Txn:NC")
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.25),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.75),"UP","NS")))%>%ungroup()%>%
+ # group_by(dTED_group,dCPS_group)%>%
+#  sample_n(25)%>%ungroup()%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NS","UP")))
+nrow(sample)
+```
+```{R}
+col = yk.col(10)[c(3,5,7)] 
+
+pdf("Fig6F_0hand2h_Txn:NC_dPAL_BOXPLOT.pdf",width=3.3,height=2.5)
+ggplot(sample,aes(y=dTED_0and2,x=dPRO_group))+ geom_quasirandom(method = "smiley",aes(col=dTED_group),size=0.5)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"PAL (nt)"))+xlab("0h vs 2h")+ggtitle( expression("Genes with no "*italic(Delta)*"Txn (0 h vs 2 h)"))+ylim(c(-50,50))+labs(col=expression(italic(Delta)*"PAL"))+theme(axis.text.x = element_blank())
+#+geom_boxplot(alpha=0.1, color="black", width=.3)
+dev.off()
+```
+
+
+
+1 VS 4 h
+```{r}
+sample=all%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  mutate("dPRO_1and4"=PRO_4-PRO_1)%>%
+  mutate("dTED_1and4"=TED_4-TED_1)%>%
+  select(id,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_1and2)<(0.5)&abs(dPRO_2and4)<(0.5)&abs(dPRO_1and4)<(0.5),"Txn:NC","Txn"))%>%
+  mutate("dTED_group"=ifelse(dTED_1and4<=(-10),"DN",ifelse(dTED_1and4>=10,"UP","NC")))%>%
+  group_by(dPRO_group)%>%
+  #sample_n(1000)%>%
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+  filter(dPRO_group=="Txn:NC")
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.25),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.75),"UP","NS")))%>%ungroup()%>%
+ # group_by(dTED_group,dCPS_group)%>%
+#  sample_n(25)%>%ungroup()%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NS","UP")))
+nrow(sample)
+```
+```{R}
+col = yk.col(10)[c(3,5,7)] 
+
+pdf("Fig6F_1hand4h_Txn:NC_dPAL_BOXPLOT.pdf",width=3.3,height=2.5)
+ggplot(sample,aes(y=dTED_1and4,x=dPRO_group))+ geom_quasirandom(method = "smiley",aes(col=dTED_group),size=0.5)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"PAL (nt)"))+xlab("1h vs 4h")+ggtitle( expression("Genes with no "*italic(Delta)*"Txn (1 h vs 4 h)"))+ylim(c(-50,50))+labs(col=expression(italic(Delta)*"PAL"))+theme(axis.text.x = element_blank())
+#+geom_boxplot(alpha=0.1, color="black", width=.3)
+dev.off()
+```
+
+
+
+
+
+
+```{R}
+
+sample=all%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_1and2"=PRO_2-PRO_1)%>%mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_1and2)<(0.5)&abs(dPRO_2and4)<(0.5),"Txn:NC","Txn"))%>%
+  select(-dPRO_0and1,-dPRO_1and2,-dPRO_2and4)%>%
+  group_by(dPRO_group)%>%sample_n(900)%>%
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+  filter(dPRO_group=="Txn:NC")
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.25),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.75),"UP","NS")))%>%ungroup()%>%
+ # group_by(dTED_group,dCPS_group)%>%
+#  sample_n(25)%>%ungroup()%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NS","UP")))
+
+pdf("FigS4F_2_0hand4h_Txn:NC_dPAL_BOXPLOT.pdf",width=3,height=2.5)
+ggplot(sample,aes(y=dPRO_0and4,x=dPRO_group))+ geom_quasirandom(method = "smiley",aes(col=dPRO_group),size=0.5)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"Transcription"))+xlab("0h vs 4h")+ggtitle( expression("Genes with no "*italic(Delta)*"Txn"))+ylim(c(-5,5))+labs(col=expression(italic(Delta)*"PAL"))+geom_boxplot(alpha=0.1, color="black", width=.3)
+dev.off()
+```
+

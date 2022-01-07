@@ -1,0 +1,244 @@
+---
+title: "F4S"
+author: "Yeonui+Kwak"
+date: "3/25/2020"
+output: html_document
+---
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig4/Tmp1")
+library(raster)
+library(tidyverse)
+library(dplyr) 
+final<-read.table("PRO_TED_CPS_unscaled2.txt",sep="\t",head=T)
+```
+Transcription upregulation genes.
+```{R}
+sample=final%>%select(c(starts_with("PRO"),starts_with("CPS"),TED_1,TED_2,ID))%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_0and2"=PRO_2-PRO_0)%>%mutate("dPRO_0and4"=PRO_4-PRO_0)%>%mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%mutate("dTED_1and2"=TED_2-TED_1)%>%
+  select(ID,starts_with("d"))%>%
+  mutate(dPROgroup=ifelse((dPRO_0and4>1&dPRO_0and1>0& dPRO_0and2>(0)),"UP",ifelse((dPRO_0and4<(-1)&dPRO_0and1<0& dPRO_0and2<0),"DN","NC")))%>%
+  mutate(dPROgroup=factor(dPROgroup,levels=c("DN","NC","UP")))%>%
+  mutate(dTED_1and2=ifelse(dPROgroup=="DN",dTED_1and2+2.5,ifelse(dPROgroup=="UP",dTED_1and2-2.5, dTED_1and2)))%>%
+  filter(dPROgroup=="UP")%>%
+  #mutate(dPRO_quantile=ifelse(dPRO_0and1<quantile(dPRO_0and1,0.25),"25",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.5),"50",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.75),"75","100"))))%>%filter(dPRO_quantile!="100" &dPRO_quantile!="75")%>%
+  mutate("dTED_group"=ifelse(dTED_1and2<(-12),"PAL_DN",ifelse(dTED_1and2>(12),"PAL_UP",ifelse(abs(dTED_1and2)<5,"PAL_NC","NA"))))%>%filter(dTED_group!="NA")%>%
+  gather("dCPS_diff","dCPS_value",starts_with("dCPS"))%>%filter(dCPS_diff=="dCPS_2and4")%>%
+#mutate("dCPS_group"=ifelse(dCPS_value<(-0.5),"DN",ifelse(dCPS_value>0.5,"UP","NC")))%>%
+group_by(dTED_group)%>%
+  filter(dPRO_0and2<2.5&dPRO_0and2>1.5)%>%
+  sample_n(20)%>%ungroup()#%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+
+
+pdf("dRNA(2.4hr)groupbydPAL(1.2hr)UP.pdf",width=4.5,height=2.5)
+ggplot(sample,aes(x=dTED_group,y=dCPS_value))+ geom_quasirandom(aes(col=dTED_group),size=1)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"RNA(log2 FC (4hr/2hr))"))+geom_boxplot(alpha=0.3, color="black", width=.2)+xlab(expression(italic(Delta)*"PAL"))+ggtitle("Genes with transcription up")
+#+geom_beeswarm(size=2,aes(col=dTED_group))
+dev.off()
+
+
+#Validaion no difference in PRO-seq profiles. among TED groups.
+
+sample_=sample%>%mutate(.PRO_0=0)%>%mutate(.PRO_1=dPRO_0and1)%>%mutate(.PRO_2=dPRO_0and2)%>%mutate(.PRO_4=dPRO_0and4)%>%
+  gather("time","txn",starts_with(".PRO_"))%>%filter(txn>=0)%>%separate(time,c("PRO","hour"),sep="_")%>%mutate(hour=as.numeric(hour))%>%select(dTED_group,hour,txn,ID)
+df_summary=sample_%>%group_by(dTED_group,hour)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+
+
+
+
+#trial1
+sample_%>%ggplot(aes(hour,txn,group=ID))+geom_line(aes(col=2,alpha=0.00001))+xlab("time upon LPS stimulation")+ylab("Transcription (log2 FC)")+facet_grid(.~dTED_group)+theme_bw()
+
+#TRIAL2
+ggplot(sample_, aes(x=hour, y=txn)) + geom_point(alpha=0.3, size=0.5) +
+   geom_line(aes(color=dTED_group,group=ID), size=0.8)+facet_grid(.~dTED_group)
+
+#TRIAL3 build summary table
+
+ggplot(sample_, aes(x=hour, y=txn)) + geom_point(alpha=0.3, size=0.5) +
+   geom_line(aes(color=dTED_group,group=ID), size=0.8)+facet_grid(.~dTED_group)
+
+pdf("PROseqprofile_dPALgroup_PROup.pdf",width=6,height=2)
+pal.labs <- c("PAL : DN", "PAL : NC", "PAL : UP"); names(pal.labs) <- c("PAL_DN", "PAL_NC","PAL_UP")
+ggplot(df_summary, aes(x=hour, y=mean)) +
+   geom_line(data=df_summary, aes(x=hour, y=mean,group=dTED_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dTED_group,fill=dTED_group), alpha=0.3)+scale_fill_manual(values=col,name = "PAL", labels = c("DN", "NC", "UP"))+theme_bw()+facet_grid(.~dTED_group)
+dev.off()
+
+
+ #all
+
+df_summary=sample_%>%group_by(hour)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+pdf("all TXN UP_PRO-seq_time-course.pdf", width = 3, heigh=3)
+ggplot(df_summary, aes(x=hour, y=mean)) +
+   geom_line(data=df_summary, aes(x=hour, y=mean), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper), alpha=0.3)+scale_fill_manual(values="grey")+theme_bw()+ggtitle("Genes with transcriptino Up")+ylab("Transcription (log2 (FC))")
+dev.off()
+```
+
+```{R}
+
+#  CPS-seq profiles. among TED groups.
+
+sample=final%>%select(c(starts_with("PRO"),starts_with("CPS"),TED_1,TED_2,ID))%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  mutate("dPRO_0and2"=PRO_2-PRO_0)%>%mutate("dPRO_0and4"=PRO_4-PRO_0)%>%mutate("dCPS_0and1"=CPS_1-CPS_0)%>%mutate("dCPS_0and2"=CPS_2-CPS_0)%>%mutate("dCPS_0and4"=CPS_4-CPS_0)%>%mutate("dTED_1and2"=TED_2-TED_1)%>%
+  select(ID,starts_with("d"))%>%
+  mutate(dPROgroup=ifelse((dPRO_0and4>1&dPRO_0and1>0& dPRO_0and2>(0)),"UP",ifelse((dPRO_0and4<(-1)&dPRO_0and1<0& dPRO_0and2<0),"DN","NC")))%>%
+  mutate(dPROgroup=factor(dPROgroup,levels=c("DN","NC","UP")))%>%
+  mutate(dTED_1and2=ifelse(dPROgroup=="DN",dTED_1and2+2.5,ifelse(dPROgroup=="UP",dTED_1and2-2.5, dTED_1and2)))%>%
+  filter(dPROgroup=="UP")%>%
+  #mutate(dPRO_quantile=ifelse(dPRO_0and1<quantile(dPRO_0and1,0.25),"25",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.5),"50",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.75),"75","100"))))%>%filter(dPRO_quantile!="100" &dPRO_quantile!="75")%>%
+  mutate("dTED_group"=ifelse(dTED_1and2<(-12),"PAL_DN",ifelse(dTED_1and2>(12),"PAL_UP",ifelse(abs(dTED_1and2)<5,"PAL_NC","NA"))))%>%filter(dTED_group!="NA")%>%
+  #gather("dCPS_diff","dCPS_value",starts_with("dCPS"))%>%filter(dCPS_diff=="dCPS_2and4")%>%
+#mutate("dCPS_group"=ifelse(dCPS_value<(-0.5),"DN",ifelse(dCPS_value>0.5,"UP","NC")))%>%
+group_by(dTED_group)%>%
+  filter(dPRO_0and2<2.5&dPRO_0and2>1.5)%>%
+  sample_n(20)%>%ungroup()#%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+
+
+#
+sample_=sample%>%mutate(.CPS_0=0)%>%mutate(.CPS_1=dCPS_0and1)%>%mutate(.CPS_2=dCPS_0and2)%>%mutate(.CPS_4=dCPS_0and4)%>%
+  gather("time","RNA",starts_with(".CPS_"))%>%separate(time,c("cps","hour"),sep="_")%>%mutate(hour=as.numeric(hour))%>%select(dTED_group,hour,RNA,ID)
+df_summary=sample_%>%group_by(dTED_group,hour)%>%summarise(n=n(),mean=mean(RNA),sd=sd(RNA),se = sd(RNA, na.rm=T)/sqrt(sum(!is.na(RNA))))
+df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+
+
+
+
+#trial1
+sample_%>%ggplot(aes(hour,txn,group=ID))+geom_line(aes(col=2,alpha=0.00001))+xlab("time upon LPS stimulation")+ylab("Transcription (log2 FC)")+facet_grid(.~dTED_group)+theme_bw()
+
+#TRIAL2
+ggplot(sample_, aes(x=hour, y=txn)) + geom_point(alpha=0.3, size=0.5) +
+   geom_line(aes(color=dTED_group,group=ID), size=0.8)+facet_grid(.~dTED_group)
+
+#TRIAL3 build summary table
+
+ggplot(sample_, aes(x=hour, y=txn)) + geom_point(alpha=0.3, size=0.5) +
+   geom_line(aes(color=dTED_group,group=ID), size=0.8)+facet_grid(.~dTED_group)
+
+pdf("CPSseqprofile_dPALgroup_PROup.pdf",width=6,height=2)
+pal.labs <- c("PAL : DN", "PAL : NC", "PAL : UP"); names(pal.labs) <- c("PAL_DN", "PAL_NC","PAL_UP")
+
+ggplot(df_summary, aes(x=hour, y=mean)) +
+   geom_line(data=df_summary, aes(x=hour, y=mean,group=dTED_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dTED_group,fill=dTED_group), alpha=0.3)+theme_bw()+facet_grid(.~dTED_group, labeller = labeller(dTED_group=pal.labs))+scale_fill_manual(values=col,name = "PAL", labels = c("DN", "NC", "UP"))+ylab("RNA abundance (log2 FC)")
+
+dev.off()
+
+
+
+
+```
+
+```{R}
+
+#  TED-seq profiles. among TED groups.
+
+sample=final%>%select(c(starts_with("PRO"),starts_with("CPS"),starts_with("TED"),ID))%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  mutate("dPRO_0and2"=PRO_2-PRO_0)%>%mutate("dPRO_0and4"=PRO_4-PRO_0)%>%mutate("dTED_0and1"=TED_1-TED_0)%>%mutate("dTED_0and2"=TED_2-TED_0)%>%mutate("dTED_0and4"=TED_4-TED_0)%>%mutate("dTED_1and2"=TED_2-TED_1)%>%
+  select(ID,starts_with("d"))%>%
+  mutate(dPROgroup=ifelse((dPRO_0and4>(1)&dPRO_0and1>0& dPRO_0and2>(0)),"UP",ifelse((dPRO_0and4<(-1)&dPRO_0and1<0& dPRO_0and2<0),"DN","NC")))%>%
+  mutate(dPROgroup=factor(dPROgroup,levels=c("DN","NC","UP")))%>%
+  mutate(dTED_1and2=ifelse(dPROgroup=="DN",dTED_1and2+2.5,ifelse(dPROgroup=="UP",dTED_1and2-2.5, dTED_1and2)))%>%
+  filter(dPROgroup=="UP")%>%
+  #mutate(dPRO_quantile=ifelse(dPRO_0and1<quantile(dPRO_0and1,0.25),"25",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.5),"50",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.75),"75","100"))))%>%filter(dPRO_quantile!="100" &dPRO_quantile!="75")%>%
+  mutate("dTED_group"=ifelse(dTED_1and2<(-12),"PAL_DN",ifelse(dTED_1and2>(12),"PAL_UP",ifelse(abs(dTED_1and2)<5,"PAL_NC","NA"))))%>%filter(dTED_group!="NA")%>%
+  select(-dTED_1and2)%>%
+  #gather("dCPS_diff","dCPS_value",starts_with("dCPS"))%>%filter(dCPS_diff=="dCPS_2and4")%>%
+#mutate("dCPS_group"=ifelse(dCPS_value<(-0.5),"DN",ifelse(dCPS_value>0.5,"UP","NC")))%>%
+group_by(dTED_group)%>%
+  filter(dPRO_0and2<(2.5)&dPRO_0and2>(1.5))%>%
+  sample_n(20)%>%ungroup()#%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+
+
+#
+sample_=sample%>%mutate(.TED_0=0)%>%mutate(.TED_1=dTED_0and1)%>%mutate(.TED_2=dTED_0and2)%>%mutate(.TED_4=dTED_0and4)%>%
+  gather("time","PAL",starts_with(".TED_"))%>%separate(time,c("ted","hour"),sep="_")%>%mutate(hour=as.numeric(hour))%>%select(dTED_group,hour,PAL,ID)
+df_summary=sample_%>%group_by(dTED_group,hour)%>%summarise(n=n(),mean=mean(PAL),sd=sd(PAL),se = sd(PAL, na.rm=T)/sqrt(sum(!is.na(PAL))))
+df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+
+
+
+
+#trial1
+sample_%>%ggplot(aes(hour,txn,group=ID))+geom_line(aes(col=2,alpha=0.00001))+xlab("time upon LPS stimulation")+ylab("Transcription (log2 FC)")+facet_grid(.~dTED_group)+theme_bw()
+
+#TRIAL2
+ggplot(sample_, aes(x=hour, y=txn)) + geom_point(alpha=0.3, size=0.5) +
+   geom_line(aes(color=dTED_group,group=ID), size=0.8)+facet_grid(.~dTED_group)
+
+#TRIAL3 build summary table
+
+ggplot(sample_, aes(x=hour, y=txn)) + geom_point(alpha=0.3, size=0.5) +
+   geom_line(aes(color=dTED_group,group=ID), size=0.8)+facet_grid(.~dTED_group)
+
+pdf("tedseqprofile_dPALgroup_PROup.pdf",width=6,height=2)
+pal.labs <- c("PAL : DN", "PAL : NC", "PAL : UP"); names(pal.labs) <- c("PAL_DN", "PAL_NC","PAL_UP")
+
+ggplot(df_summary, aes(x=hour, y=mean)) +
+   geom_line(data=df_summary, aes(x=hour, y=mean,group=dTED_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dTED_group,fill=dTED_group), alpha=0.3)+theme_bw()+facet_grid(.~dTED_group, labeller = labeller(dTED_group=pal.labs))+scale_fill_manual(values=col,name = "PAL", labels = c("DN", "NC", "UP"))+ylab("PAL change (nt)")
+
+dev.off()
+
+
+
+
+```
+
+
+
+
+Transcription DOWN genes.
+```{R}
+sample=final%>%select(c(starts_with("PRO"),starts_with("CPS"),TED_1,TED_2,ID))%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_0and2"=PRO_2-PRO_0)%>%mutate("dPRO_0and4"=PRO_4-PRO_0)%>%mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%mutate("dTED_1and2"=TED_2-TED_1)%>%
+  select(ID,starts_with("d"))%>%
+  mutate(dPROgroup=ifelse((dPRO_0and4>1&dPRO_0and1>0& dPRO_0and2>(0)),"UP",ifelse((dPRO_0and4<(-1)&dPRO_0and1<0& dPRO_0and2<0),"DN","NC")))%>%
+  mutate(dPROgroup=factor(dPROgroup,levels=c("DN","NC","UP")))%>%
+  mutate(dTED_1and2=ifelse(dPROgroup=="DN",dTED_1and2+2.5,ifelse(dPROgroup=="UP",dTED_1and2-2.5, dTED_1and2)))%>%
+  filter(dPROgroup=="DN")%>%
+  #mutate(dPRO_quantile=ifelse(dPRO_0and1<quantile(dPRO_0and1,0.25),"25",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.5),"50",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.75),"75","100"))))%>%filter(dPRO_quantile!="100" &dPRO_quantile!="75")%>%
+  mutate("dTED_group"=ifelse(dTED_1and2<(-10),"PAL_DN",ifelse(dTED_1and2>(10),"PAL_UP",ifelse(abs(dTED_1and2)<5,"PAL_NC","NA"))))%>%filter(dTED_group!="NA")%>%
+  gather("dCPS_diff","dCPS_value",starts_with("dCPS"))%>%filter(dCPS_diff=="dCPS_2and4")%>%
+#mutate("dCPS_group"=ifelse(dCPS_value<(-0.5),"DN",ifelse(dCPS_value>0.5,"UP","NC")))%>%
+group_by(dTED_group)%>%
+  filter(dPRO_0and2<(-1)&dPRO_0and2>(-1.75))%>%
+  sample_n(20)%>%ungroup()#%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+
+
+pdf("dRNA(2.4hr)groupbydPAL(1.2hr)DOWN(n=20).pdf",width=4.5,height=2.5)
+ggplot(sample,aes(x=dTED_group,y=dCPS_value))+ geom_quasirandom(aes(col=dTED_group),size=1)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"RNA(log2 FC (4hr/2hr))"))+geom_boxplot(alpha=0.3, color="black", width=.2)+xlab(expression(italic(Delta)*"PAL"))+ggtitle("Genes with transcription down")
+#+geom_beeswarm(size=2,aes(col=dTED_group))
+dev.off()
+
+
+#Validaion no difference in PRO-seq profiles. among TED groups.
+
+sample_=sample%>%mutate(.PRO_0=0)%>%mutate(.PRO_1=dPRO_0and1)%>%mutate(.PRO_2=dPRO_0and2)%>%mutate(.PRO_4=dPRO_0and4)%>%
+  gather("time","txn",starts_with(".PRO_"))%>%filter(txn<=0)%>%separate(time,c("PRO","hour"),sep="_")%>%mutate(hour=as.numeric(hour))%>%select(dTED_group,hour,txn,ID)
+df_summary=sample_%>%group_by(dTED_group,hour)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+
+
+
+
+#trial1
+sample_%>%ggplot(aes(hour,txn,group=ID))+geom_line(aes(col=2,alpha=0.00001))+xlab("time upon LPS stimulation")+ylab("Transcription (log2 FC)")+facet_grid(.~dTED_group)+theme_bw()
+
+#TRIAL2
+ggplot(sample_, aes(x=hour, y=txn)) + geom_point(alpha=0.3, size=0.5) +
+   geom_line(aes(color=dTED_group,group=ID), size=0.8)+facet_grid(.~dTED_group)
+
+#TRIAL3 build summary table
+
+ggplot(sample_, aes(x=hour, y=txn)) + geom_point(alpha=0.3, size=0.5) +
+   geom_line(aes(color=dTED_group,group=ID), size=0.8)+facet_grid(.~dTED_group)
+
+pdf("PROseqprofile_dPALgroup_PRODOWN.pdf",width=6,height=2)
+ggplot(df_summary, aes(x=hour, y=mean)) +
+   geom_line(data=df_summary, aes(x=hour, y=mean,group=dTED_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dTED_group,fill=dTED_group), alpha=0.3)+theme_bw()+facet_grid(.~dTED_group)+scale_fill_manual(values=col)
+dev.off()
+
+
+```

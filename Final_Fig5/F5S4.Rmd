@@ -1,0 +1,217 @@
+---
+title: "F5S4"
+author: "Yeonui+Kwak"
+date: "4/3/2020"
+output: html_document
+---
+
+
+1. compare 0 and 4 h samples.
+
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig5/Tmp4")
+
+```
+2. Install libraries required for Dataprocessing.
+```{R}
+#install.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr) 
+#install.packages('ggbeeswarm')
+library(ggbeeswarm)
+```
+
+3.Color
+```{R}
+library(gridExtra)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+
+col = yk.col(10)[c(3,5,7)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+```
+3. Load Data
+
+```{R}
+all<-read.table("TED.PRO.CPS.final.txt",sep="\t",header=T, stringsAsFactors = F)
+head(all)
+```
+0 and 4 hours comparison: 
+4.Select genes with transcription increase between 0 h and 4 h samples.
+
+```{R}
+sample=all%>%select(c(starts_with("PRO"),starts_with("CPS"),TED_0,TED_4,id))%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_0and2"=PRO_2-PRO_0)%>%mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  
+  mutate("dCPS_0and4"=CPS_4-CPS_0)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%mutate("dCPS_1and4"=CPS_4-CPS_1)%>%
+  mutate("dTED_0and4"=TED_4-TED_0)%>%
+  select(id,starts_with("d"))%>%
+  mutate(dPROgroup=ifelse((dPRO_0and4>0.5&dPRO_0and1>0&dPRO_1and2>(0)&dPRO_2and4>(0)),"UP",ifelse((dPRO_0and4<=(-1)&dPRO_0and4>(-2)&dPRO_0and1<0& dPRO_1and2<=0&dPRO_2and4<=0),"DN",ifelse(abs(dPRO_0and1)<0.5&abs(dPRO_0and2)<(0.5)&abs(dPRO_0and4)<(0.5),"NC","NA"))))%>%
+  filter(dPROgroup!="NA")%>%
+  mutate(dPROgroup=factor(dPROgroup,levels=c("DN","NC","UP")))%>%
+  filter(dPROgroup=="DN")%>%
+  #mutate(dPRO_quantile=ifelse(dPRO_0and1<quantile(dPRO_0and1,0.25),"25",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.5),"50",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.75),"75","100"))))%>%filter(dPRO_quantile!="100" &dPRO_quantile!="75")%>%
+  #mutate("dTED_group"=ifelse(dTED_0and4<(-10),"PAL_DN",ifelse(dTED_0and4>(10),"PAL_UP",ifelse(abs(dTED_0and4)<5,"PAL_NC","NA"))))%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<(-15),"PAL_DN",ifelse(dTED_0and4>(10),"PAL_UP",ifelse(abs(dTED_0and4)<5,"PAL_NC","NA"))))%>%
+  filter(dTED_group!="NA")%>%
+  gather("dCPS_diff","dCPS_value",starts_with("dCPS"))%>%filter(dCPS_diff=="dCPS_2and4")%>%filter(dTED_group!="PAL_UP")
+  #mutate("dCPS_group"=ifelse(dCPS_value<(-0.5),"DN",ifelse(dCPS_value>0.5,"UP","NC")))%>%
+  #group_by(dTED_group)%>%
+  #sample_n(50)%>%ungroup()#%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+
+sample$dTED_group%>%table
+```
+
+
+```{R}
+t=sample%>%group_by(dTED_group)%>%count
+cat("sample number for no change:",t[t$dTED_group=="PAL_NC",]$n,", sample number for DN:",t[t$dTED_group=="PAL_DN",]$n)
+pdf("F5B_2.pdf",width=4,height=2.5)
+ggplot(sample,aes(x=dTED_group,y=dCPS_value))+ geom_quasirandom(aes(col=dTED_group),size=1)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"RNA(log2 FC (4hr/2hr))"))+geom_boxplot(alpha=0.3, color="black", width=.2)+xlab(expression(italic(Delta)*"PAL"))+ggtitle("Genes with transcription down")+scale_color_manual(labels = c("DN","NC","UP"),values=col)+
+  scale_x_discrete(labels=c("PAL_DN" = "DN", "PAL_NC" = "NC","PAL_UP" = "UP"))+labs(col=expression(italic(Delta)*"PAL"))+
+  ylim(c(-2,1))
+#+geom_beeswarm(size=2,aes(col=dTED_group))
+dev.off()
+
+
+```
+
+```{R}
+pdf("F5B_5.pdf",width=4,height=2.5)
+ggplot(sample,aes(x=dTED_group,y=dPRO_0and4))+ geom_quasirandom(aes(col=dTED_group),size=1)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"Txn(log2 FC (4hr/0hr))"))+geom_boxplot(alpha=0.3, color="black", width=.2)+xlab(expression(italic(Delta)*"PAL"))+ggtitle("Genes with transcription down")+scale_color_manual(labels = c("DN","NC","UP"),values=col)+
+  scale_x_discrete(labels=c("PAL_DN" = "DN", "PAL_NC" = "NC","PAL_UP" = "UP"))+labs(col=expression(italic(Delta)*"PAL"))
+#+geom_beeswarm(size=2,aes(col=dTED_group))
+dev.off()
+
+```
+
+anova
+```{R}
+# Compute the analysis of variance
+res.aov <- aov(dCPS_value ~dTED_group, data = sample)
+res.aov <- aov(dPRO_0and4~dTED_group, data = sample)
+# Summary of the analysis
+summary(res.aov)
+TukeyHSD(res.aov)
+
+```
+
+```{R}
+sample_=sample%>%mutate(.PRO_0=0)%>%mutate(.PRO_1=dPRO_0and1)%>%mutate(.PRO_2=dPRO_0and2)%>%mutate(.PRO_4=dPRO_0and4)%>%
+  gather("time","txn",starts_with(".PRO_"))%>%filter(txn<=0)%>%separate(time,c("PRO","hour"),sep="_")%>%mutate(hour=as.numeric(hour))%>%select(dTED_group,hour,txn,id)
+df_summary=sample_%>%group_by(dTED_group,hour)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+
+df_summary
+```
+
+
+```{R}
+pdf("F5A.pdf",width=4.5,height=2.3)
+pal.labs <- c("PAL : DN", "PAL : NC", "PAL : UP"); names(pal.labs) <- c("PAL_DN", "PAL_NC","PAL_UP")
+ggplot(df_summary, aes(x=hour, y=mean)) +xlab("Time upon LPS stimulation")+
+   geom_line(data=df_summary, aes(x=hour, y=mean,group=dTED_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dTED_group,fill=dTED_group), alpha=0.3)+scale_fill_manual(values=col,name = "PAL", labels = c("DN", "NC", "UP"))+theme_bw()+facet_grid(.~dTED_group,labeller = labeller(dTED_group=pal.labs))+scale_fill_manual(values=col,name = "PAL", labels = c("DN", "NC", "UP"))+ylab("mean (Transcription) ± 95% CI")
+dev.off()
+
+
+
+```
+
+RNA leve time course
+```{R}
+sample=all%>%select(c(starts_with("PRO"),starts_with("CPS"),TED_0,TED_4,id))%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_0and2"=PRO_2-PRO_0)%>%mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  
+  mutate("dCPS_0and1"=CPS_1-CPS_0)%>%mutate("dCPS_0and2"=CPS_2-CPS_0)%>%mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  mutate("dTED_0and4"=TED_4-TED_0)%>%
+  select(id,starts_with("d"))%>%
+  mutate(dPROgroup=ifelse((dPRO_0and4>0.5&dPRO_0and1>0&dPRO_1and2>(0)&dPRO_2and4>(0)),"UP",ifelse((dPRO_0and4<=(-1)&dPRO_0and4>(-2)&dPRO_0and4>(-1.5)&dPRO_0and1<0& dPRO_1and2<0&dPRO_2and4<0),"DN",ifelse(abs(dPRO_0and1)<0.5&abs(dPRO_0and2)<(0.5)&abs(dPRO_0and4)<(0.5),"NC","NA"))))%>%
+  filter(dPROgroup!="NA")%>%
+  mutate(dPROgroup=factor(dPROgroup,levels=c("DN","NC","UP")))%>%
+  filter(dPROgroup=="DN")%>%
+  #mutate(dPRO_quantile=ifelse(dPRO_0and1<quantile(dPRO_0and1,0.25),"25",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.5),"50",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.75),"75","100"))))%>%filter(dPRO_quantile!="100" &dPRO_quantile!="75")%>%
+  #mutate("dTED_group"=ifelse(dTED_0and4<(-10),"PAL_DN",ifelse(dTED_0and4>(10),"PAL_UP",ifelse(abs(dTED_0and4)<5,"PAL_NC","NA"))))%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<(-15),"PAL_DN",ifelse(dTED_0and4>(10),"PAL_UP",ifelse(abs(dTED_0and4)<5,"PAL_NC","NA"))))%>%
+  filter(dTED_group!="NA"&dTED_group!="PAL_UP")
+  #gather("dCPS_diff","dCPS_value",starts_with("dCPS"))
+#%>%filter(dCPS_diff=="dCPS_0and4")
+  #mutate("dCPS_group"=ifelse(dCPS_value<(-0.5),"DN",ifelse(dCPS_value>0.5,"UP","NC")))%>%
+  #group_by(dTED_group)%>%
+  #sample_n(50)%>%ungroup()#%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+
+sample_=sample%>%mutate(.CPS_0=0)%>%mutate(.CPS_1=dCPS_0and1)%>%mutate(.CPS_2=dCPS_0and2)%>%mutate(.CPS_4=dCPS_0and4)%>%
+  gather("time","RNA",starts_with(".CPS_"))%>%separate(time,c("CPS","hour"),sep="_")%>%mutate(hour=as.numeric(hour))%>%select(dTED_group,hour,RNA,id)
+df_summary=sample_%>%group_by(dTED_group,hour)%>%summarise(n=n(),mean=mean(RNA),sd=sd(RNA),se = sd(RNA, na.rm=T)/sqrt(sum(!is.na(RNA))))
+df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+
+pdf("F5C.pdf",width=4.5,height=2.3)
+pal.labs <- c("PAL : DN", "PAL : NC", "PAL : UP"); names(pal.labs) <- c("PAL_DN", "PAL_NC","PAL_UP")
+ggplot(df_summary, aes(x=hour, y=mean)) +xlab("Time upon LPS stimulation")+
+   geom_line(data=df_summary, aes(x=hour, y=mean,group=dTED_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dTED_group,fill=dTED_group), alpha=0.3)+scale_fill_manual(values=col,name = "PAL", labels = c("DN", "NC", "UP"))+theme_bw()+facet_wrap(dTED_group~.,labeller = labeller(dTED_group=pal.labs))+
+  scale_fill_manual(values=col,name = "PAL", labels = c("DN", "NC", "UP"))+ylab("mean (RNA level) ± 95% CI")
+dev.off()
+
+
+```
+
+PAL
+
+
+```{R}
+sample=all%>%select(c(starts_with("PRO"),starts_with("CPS"),starts_with("TED"),id))%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_0and2"=PRO_2-PRO_0)%>%mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  
+  mutate("dCPS_0and1"=CPS_1-CPS_0)%>%mutate("dCPS_0and2"=CPS_2-CPS_0)%>%mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  
+  mutate("dTED_0and1"=TED_1-TED_0)%>%mutate("dTED_0and2"=TED_2-TED_0)%>%mutate("dTED_0and4"=TED_4-TED_0)%>%
+  mutate("dTED_1and2"=TED_2-TED_1)%>%mutate("dTED_2and4"=TED_4-TED_2)%>%
+  select(id,starts_with("d"))%>%
+  mutate(dPROgroup=ifelse((dPRO_0and4>0.5&dPRO_0and1>0&dPRO_1and2>(0)&dPRO_2and4>(0)),"UP",ifelse((dPRO_0and4<=(-1)&dPRO_0and4>(-2)&dPRO_0and4>(-1.5)&dPRO_0and1<0& dPRO_1and2<=0&dPRO_2and4<=0),"DN",ifelse(abs(dPRO_0and1)<0.5&abs(dPRO_0and2)<(0.5)&abs(dPRO_0and4)<(0.5),"NC","NA"))))%>%
+  filter(dPROgroup!="NA")%>%
+  mutate(dPROgroup=factor(dPROgroup,levels=c("DN","NC","UP")))%>%
+  filter(dPROgroup=="DN")%>%
+  #mutate(dPRO_quantile=ifelse(dPRO_0and1<quantile(dPRO_0and1,0.25),"25",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.5),"50",ifelse(dPRO_0and1<quantile(dPRO_0and1,0.75),"75","100"))))%>%filter(dPRO_quantile!="100" &dPRO_quantile!="75")%>%
+  #mutate("dTED_group"=ifelse(dTED_0and4<(-10),"PAL_DN",ifelse(dTED_0and4>(10),"PAL_UP",ifelse(abs(dTED_0and4)<5,"PAL_NC","NA"))))%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<(-15),"PAL_DN",ifelse(dTED_0and4>(10),"PAL_UP",ifelse(abs(dTED_0and4)<5,"PAL_NC","NA"))))%>%
+  filter(dTED_group!="NA"&dTED_group!="PAL_UP")
+  #gather("dCPS_diff","dCPS_value",starts_with("dCPS"))
+#%>%filter(dCPS_diff=="dCPS_0and4")
+  #mutate("dCPS_group"=ifelse(dCPS_value<(-0.5),"DN",ifelse(dCPS_value>0.5,"UP","NC")))%>%
+  #group_by(dTED_group)%>%
+  #sample_n(50)%>%ungroup()#%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+
+sample_=sample%>%mutate(.CPS_0=0)%>%mutate(.CPS_1=dTED_0and1)%>%mutate(.CPS_2=dTED_0and2)%>%mutate(.CPS_4=dTED_0and4)%>%
+  gather("time","RNA",starts_with(".CPS_"))%>%separate(time,c("CPS","hour"),sep="_")%>%mutate(hour=as.numeric(hour))%>%select(dTED_group,hour,RNA,id)
+df_summary=sample_%>%group_by(dTED_group,hour)%>%summarise(n=n(),mean=mean(RNA),sd=sd(RNA),se = sd(RNA, na.rm=T)/sqrt(sum(!is.na(RNA))))
+df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+
+pdf("F5D.pdf",width=4.5,height=2.3)
+pal.labs <- c("PAL : DN", "PAL : NC", "PAL : UP"); names(pal.labs) <- c("PAL_DN", "PAL_NC","PAL_UP")
+ggplot(df_summary, aes(x=hour, y=mean)) +xlab("Time upon LPS stimulation")+
+   geom_line(data=df_summary, aes(x=hour, y=mean,group=dTED_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dTED_group,fill=dTED_group), alpha=0.3)+scale_fill_manual(values=col,name = "PAL", labels = c("DN", "NC", "UP"))+theme_bw()+facet_wrap(dTED_group~.,labeller = labeller(dTED_group=pal.labs))+
+  scale_fill_manual(values=col,name = "PAL", labels = c("DN", "NC", "UP"))+ylab("mean (PAL) ± 95% CI")+ylim(c(-40,20))
+dev.off()
+
+
+
+```

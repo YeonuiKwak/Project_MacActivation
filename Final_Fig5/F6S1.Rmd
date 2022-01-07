@@ -1,0 +1,1155 @@
+---
+title: "F6S1:dRNA and dPAL association"
+author: "Yeonui+Kwak"
+date: "6/16/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig6/Tmp1")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+
+3. Load sample
+
+```{R}
+final<-read.table("PRO_TED_CPS.readcounttable.txt",sep="\t",header=T,stringsAsFactors = F)
+head(final)
+```
+
+4.1 General association between dPAL and dRNA
+
+Data manipulation:Group by dPAL
+0.4
+```{R}
+#sample
+sample=final%>%mutate("dCPS_0and4"=log2(CPS_4/CPS_0))%>%
+  mutate("dTED_0and4"=TED_4-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<=(-10),"PAL_DN",ifelse(dTED_0and4>=10,"PAL_UP","PAL_NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NS")))%>%
+  group_by(dTED_group)%>%
+  sample_n(50)%>%ungroup()%>%
+  mutate(dTED_group=factor(dTED_group,levels=c("PAL_DN","PAL_NC","PAL_UP")))
+sample
+```
+
+5. Set CDF color (N=3)
+```{R}
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-3,3) +
+  ylab("Cumulative fraction")
+```
+
+6. Draw CDF plot for transcripts : dPAL and dRNA association between 0h and 4h.
+```{R}
+pdf("F2A_xaxis:dRNA_0.4.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS_0and4,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("0h"%->%"4h")) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression(italic(Delta)*"PAL"))+
+  scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+```
+Data manipulation
+0.1
+```{R}
+#sample
+sample=final%>%mutate("dCPS_0and4"=log2((CPS_1+1)/(CPS_0+1)))%>%
+  mutate("dTED_0and4"=TED_1-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<=(-10),"PAL_DN",ifelse(dTED_0and4>=10,"PAL_UP","PAL_NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NS")))%>%
+  group_by(dTED_group)%>%
+  sample_n(70)%>%ungroup()%>%
+  mutate(dTED_group=factor(dTED_group,levels=c("PAL_DN","PAL_NC","PAL_UP")))
+
+
+pdf("F2A_xaxis:dRNA_0.1.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS_0and4,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("0h"%->%"1h")) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression(italic(Delta)*"PAL"))+
+  scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+
+```
+0.2
+```{R}
+#sample
+sample=final%>%mutate("dCPS_0and4"=log2((CPS_2+1)/(CPS_0+1)))%>%
+  mutate("dTED_0and4"=TED_2-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<=(-10),"PAL_DN",ifelse(dTED_0and4>=10,"PAL_UP","PAL_NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NS")))%>%
+  group_by(dTED_group)%>%
+  sample_n(80)%>%ungroup()%>%
+  mutate(dTED_group=factor(dTED_group,levels=c("PAL_DN","PAL_NC","PAL_UP")))
+
+
+pdf("F2A_xaxis:dRNA_0.2.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS_0and4,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("0h"%->%"2h")) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression(italic(Delta)*"PAL"))+
+  scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+
+```
+
+1.2
+```{R}
+#sample
+sample=final%>%mutate("dCPS_0and4"=log2((CPS_2+1)/(CPS_1+1)))%>%
+  mutate("dTED_0and4"=TED_2-TED_1)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<=(-10),"PAL_DN",ifelse(dTED_0and4>=10,"PAL_UP","PAL_NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NS")))%>%
+  group_by(dTED_group)%>%
+  sample_n(140)%>%ungroup()%>%
+  mutate(dTED_group=factor(dTED_group,levels=c("PAL_DN","PAL_NC","PAL_UP")))
+
+
+pdf("F2A_xaxis:dRNA_1.2.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS_0and4,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("1h"%->%"2h")) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression(italic(Delta)*"PAL"))+
+  scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+
+```
+
+1.4
+```{R}
+#sample
+sample=final%>%mutate("dCPS_0and4"=log2((CPS_4+1)/(CPS_1+1)))%>%
+  mutate("dTED_0and4"=TED_4-TED_1)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<=(-10),"PAL_DN",ifelse(dTED_0and4>=10,"PAL_UP","PAL_NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NS")))%>%
+  group_by(dTED_group)%>%
+  sample_n(220)%>%ungroup()%>%
+  mutate(dTED_group=factor(dTED_group,levels=c("PAL_DN","PAL_NC","PAL_UP")))
+
+
+pdf("F2A_xaxis:dRNA_1.4.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS_0and4,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("1h"%->%"4h")) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression(italic(Delta)*"PAL"))+
+  scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+
+```
+2.4
+```{R}
+#sample
+sample=final%>%mutate("dCPS_0and4"=log2((CPS_4+1)/(CPS_2+1)))%>%
+  mutate("dTED_0and4"=TED_4-TED_2)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<=(-10),"PAL_DN",ifelse(dTED_0and4>=10,"PAL_UP","PAL_NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NS")))%>%
+  group_by(dTED_group)%>%
+  sample_n(300)%>%ungroup()%>%
+  mutate(dTED_group=factor(dTED_group,levels=c("PAL_DN","PAL_NC","PAL_UP")))
+
+
+pdf("F2A_xaxis:dRNA_2.4.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS_0and4,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("2h"%->%"4h")) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression(italic(Delta)*"PAL"))+
+  scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+
+```
+
+
+Group by dRNA
+0.4
+```{R}
+nrow(final)
+sample=final%>%mutate("dCPS_value"=log2((CPS_4+1)/(CPS_0+1)))%>%
+  mutate("dTED_0and4"=TED_4-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  #mutate("dTED_group"=ifelse(dTED_0and4<(-10),"PAL_DN",ifelse(dTED_0and4>10,"PAL_UP","PAL_NS")))%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  sample_n(1000)%>%ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+sample%>%group_by(dCPS_group)%>%summarise(median(dTED_0and4))
+
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+
+pdf("F2A_xaxis.dPAL.0.4.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_0and4,
+                col = dCPS_group),
+            geom = "step") +
+  labs( title =expression("0h"%->%"4h")) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))+
+  scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+
+````
+
+0.1
+```{R}
+nrow(final)
+sample=final%>%mutate("dCPS_value"=log2((CPS_1+1)/(CPS_0+1)))%>%
+  mutate("dTED_0and4"=TED_1-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  #mutate("dTED_group"=ifelse(dTED_0and4<(-10),"PAL_DN",ifelse(dTED_0and4>10,"PAL_UP","PAL_NS")))%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  sample_n(1000)%>%ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+sample%>%group_by(dCPS_group)%>%summarise(median(dTED_0and4))
+
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+
+pdf("F2A_xaxis.dPAL0.1.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_0and4,
+                col = dCPS_group),
+            geom = "step") +
+  labs( title =expression("0h"%->%"1h")) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))+
+  scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+
+````
+
+0.2
+```{R}
+nrow(final)
+sample=final%>%mutate("dCPS_value"=log2((CPS_2+1)/(CPS_0+1)))%>%
+  mutate("dTED_0and4"=TED_2-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  #mutate("dTED_group"=ifelse(dTED_0and4<(-10),"PAL_DN",ifelse(dTED_0and4>10,"PAL_UP","PAL_NS")))%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  sample_n(1000)%>%ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+sample%>%group_by(dCPS_group)%>%summarise(median(dTED_0and4))
+
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+
+pdf("F2A_xaxis.dPAL0.2.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_0and4,
+                col = dCPS_group),
+            geom = "step") +
+  labs( title =expression("0h"%->%"2h")) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))+
+  scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+
+````
+1.2
+```{R}
+nrow(final)
+sample=final%>%mutate("dCPS_value"=log2((CPS_2+1)/(CPS_1+1)))%>%
+  mutate("dTED_0and4"=TED_2-TED_1)%>%
+  select(newid,starts_with("d"))%>%
+  #mutate("dTED_group"=ifelse(dTED_0and4<(-10),"PAL_DN",ifelse(dTED_0and4>10,"PAL_UP","PAL_NS")))%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  sample_n(1000)%>%ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+sample%>%group_by(dCPS_group)%>%summarise(median(dTED_0and4))
+
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+
+pdf("F2A_xaxis.dPAL.1.2.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_0and4,
+                col = dCPS_group),
+            geom = "step") +
+  labs( title =expression("1h"%->%"2h")) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))+
+  scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+
+```
+
+1.4
+```{R}
+nrow(final)
+sample=final%>%mutate("dCPS_value"=log2((CPS_4+1)/(CPS_1+1)))%>%
+  mutate("dTED_0and4"=TED_4-TED_1)%>%
+  select(newid,starts_with("d"))%>%
+  #mutate("dTED_group"=ifelse(dTED_0and4<(-10),"PAL_DN",ifelse(dTED_0and4>10,"PAL_UP","PAL_NS")))%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  sample_n(1000)%>%ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+sample%>%group_by(dCPS_group)%>%summarise(median(dTED_0and4))
+
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+
+pdf("F2A_xaxis.dPAL.1.4.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_0and4,
+                col = dCPS_group),
+            geom = "step") +
+  labs( title =expression("1h"%->%"4h")) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))#+
+  #scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+
+```
+2.4
+```{R}
+nrow(final)
+sample=final%>%mutate("dCPS_value"=log2((CPS_4+1)/(CPS_2+1)))%>%
+  mutate("dTED_0and4"=TED_4-TED_2)%>%
+  select(newid,starts_with("d"))%>%
+  #mutate("dTED_group"=ifelse(dTED_0and4<(-10),"PAL_DN",ifelse(dTED_0and4>10,"PAL_UP","PAL_NS")))%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  sample_n(1000)%>%ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+sample%>%group_by(dCPS_group)%>%summarise(median(dTED_0and4))
+
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+
+pdf("F2A_xaxis.dPAL.2.4.pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_0and4,
+                col = dCPS_group),
+            geom = "step") +
+  labs( title =expression("2h"%->%"4h")) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))+
+  scale_color_manual(labels = c("DN", "NC","UP"),values=col)
+dev.off()
+
+```
+
+
+
+4.2 dPAL and dRNA even in the absence of transcriptional change.
+Draw CDF plot to see dPAL and dRNA in no TXN change.
+4. Data manipulation
+
+0 vs 1h
+```{R}
+sample=final%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  #mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  #mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  #mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_0and1"=log2((CPS_1+1)/(CPS_0+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_0and1"=TED_1-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5),"Txn:NC","Txn"))%>%
+ #mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_1and2)<(0.5)&abs(dPRO_2and4)<(0.5)&abs(dPRO_0and4)<0.5,"Txn:NC","Txn"))%>%
+  #select(-dPRO_0and1,-dPRO_0and2,-dPRO_0and4)%>%
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dTED_group"=ifelse(dTED_0and1<=(-8),"DN",ifelse(dTED_0and1>=8,"UP","NC")))%>%filter(!is.na(dTED_group))%>%
+  group_by(dTED_group)#%>%sample_n(60)
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+
+```
+
+5.set CDF color
+```{r}
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-4,4) +
+  ylab("Cumulative fraction")
+```
+
+```{R}
+
+pdf("Fig5_CDF(0.1h).pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS_0and1,
+                col = dTED_group,
+            geom = "step")) +
+ #labs( title =expression("Transcripts with "*" PAL decrease "*("1h"%->%"2h"))) +
+  xlab(expression(italic(Delta)*"RNA abundance"))+labs(col=expression(italic(Delta)*"PAL"))+
+  ggtitle( expression("Genes with no "*italic(Delta)*"Txn (0 h vs 1 h)"))
+#+scale_color_manual(values=col)
+dev.off()
+
+```
+
+
+
+Group_by dCPS
+0 vs 2h
+```{R}
+sample=final%>%
+  mutate("dPRO_0and2"=PRO_2-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  #mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_2+1)/(CPS_0+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_0and2"=TED_2-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_1and2)<(0.5)&abs(dPRO_0and2)<(0.5),"Txn:NC","Txn"))%>%
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  sample_n(233)%>%ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+  #%>%
+  #mutate("dTED_group"=ifelse(dTED_0and2<=(-10),"DN",ifelse(dTED_0and2>=10,"UP","NC")))%>%filter(!is.na(dTED_group))%>%
+  #group_by(dTED_group)#%>%sample_n(60)
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+
+```
+
+5.set CDF color
+```{r}
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-20,20) +
+  ylab("Cumulative fraction")
+```
+
+```{R}
+
+pdf("Fig5_CDF(0.2h).pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_0and2,
+                col = dCPS_group,
+            geom = "step")) +
+ #labs( title =expression("Transcripts with "*" PAL decrease "*("1h"%->%"2h"))) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))+
+  ggtitle( expression("Genes with no "*italic(Delta)*"Txn (0 h vs 2 h)"))
+#+scale_color_manual(values=col)
+dev.off()
+
+
+
+
+```
+0 vs 1h
+```{R}
+sample=final%>%
+  mutate("dPRO_0and2"=PRO_2-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  #mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_1+1)/(CPS_0+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_value"=TED_1-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5),"Txn:NC","Txn"))%>%
+  filter(dPRO_group=="Txn:NC")%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  sample_n(200)%>%ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+  #%>%
+  #mutate("dTED_group"=ifelse(dTED_0and2<=(-10),"DN",ifelse(dTED_0and2>=10,"UP","NC")))%>%filter(!is.na(dTED_group))%>%
+  #group_by(dTED_group)#%>%sample_n(60)
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+
+```
+
+5.set CDF color
+```{r}
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-20,20) +
+  ylab("Cumulative fraction")
+```
+
+```{R}
+
+pdf("Fig5_CDF(0.1h).pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_value,
+                col = dCPS_group,
+            geom = "step")) +
+ #labs( title =expression("Transcripts with "*" PAL decrease "*("1h"%->%"2h"))) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))+
+  ggtitle( expression("Genes with no "*italic(Delta)*"Txn (0 h vs 1 h)"))
+#+scale_color_manual(values=col)
+dev.off()
+
+```
+
+1 vs 2h
+```{R}
+sample=final%>%
+  mutate("dPRO_0and2"=PRO_2-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  #mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_2+1)/(CPS_1+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_value"=TED_2-TED_1)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_1and2)<(0.5),"Txn:NC","Txn"))%>%
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  #sample_n(1300)%>%
+  ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+  #%>%
+  #mutate("dTED_group"=ifelse(dTED_0and2<=(-10),"DN",ifelse(dTED_0and2>=10,"UP","NC")))%>%filter(!is.na(dTED_group))%>%
+  #group_by(dTED_group)#%>%sample_n(60)
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+
+```
+
+5.set CDF color
+```{r}
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-20,20) +
+  ylab("Cumulative fraction")
+```
+
+```{R}
+
+pdf("Fig5_CDF(1.2h).pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_value,
+                col = dCPS_group,
+            geom = "step")) +
+ #labs( title =expression("Transcripts with "*" PAL decrease "*("1h"%->%"2h"))) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))+
+  ggtitle( expression("Genes with no "*italic(Delta)*"Txn (1 h vs 2 h)"))
+#+scale_color_manual(values=col)
+dev.off()
+
+
+
+
+```
+1 vs 4h
+```{R}
+sample=final%>%
+  mutate("dPRO_1and4"=PRO_4-PRO_1)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  #mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_4+1)/(CPS_1+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_value"=TED_4-TED_1)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_1and4)<(0.5)&abs(dPRO_1and2)<(0.5)&abs(dPRO_2and4)<(0.5),"Txn:NC","Txn"))%>%
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  #sample_n(68)%>%
+  ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+  #%>%
+  #mutate("dTED_group"=ifelse(dTED_0and2<=(-10),"DN",ifelse(dTED_0and2>=10,"UP","NC")))%>%filter(!is.na(dTED_group))%>%
+  #group_by(dTED_group)#%>%sample_n(60)
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+
+```
+
+5.set CDF color
+```{r}
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+```
+
+```{R}
+
+pdf("Fig5_CDF(1.4h).pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_value,
+                col = dCPS_group,
+            geom = "step")) +
+ #labs( title =expression("Transcripts with "*" PAL decrease "*("1h"%->%"2h"))) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))+
+  ggtitle( expression("Genes with no "*italic(Delta)*"Txn (1 h vs 4 h)"))
+#+scale_color_manual(values=col)
+dev.off()
+
+
+
+
+```
+
+2 vs 4h
+```{R}
+sample=final%>%
+  mutate("dPRO_1and4"=PRO_4-PRO_1)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  #mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_4+1)/(CPS_2+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_value"=TED_4-TED_2)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_2and4)<(0.5),"Txn:NC","Txn"))%>%
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  #sample_n(400)%>%
+  ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+  #%>%
+  #mutate("dTED_group"=ifelse(dTED_0and2<=(-10),"DN",ifelse(dTED_0and2>=10,"UP","NC")))%>%filter(!is.na(dTED_group))%>%
+  #group_by(dTED_group)#%>%sample_n(60)
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+
+```
+
+5.set CDF color
+```{r}
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+```
+
+```{R}
+
+pdf("Fig5_CDF(2.4h).pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_value,
+                col = dCPS_group,
+            geom = "step")) +
+ #labs( title =expression("Transcripts with "*" PAL decrease "*("1h"%->%"2h"))) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))+
+  ggtitle( expression("Genes with no "*italic(Delta)*"Txn (2 h vs 4 h)"))
+#+scale_color_manual(values=col)
+dev.off()
+```
+
+0 vs 4h
+```{R}
+sample=final%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_4+1)/(CPS_0+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_value"=TED_4-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_1and2)<(0.5)&abs(dPRO_2and4)<(0.5)&abs(dPRO_0and4)<(0.5),"Txn:NC","Txn"))%>%
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  #sample_n(500)%>%
+  ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+  #%>%
+  #mutate("dTED_group"=ifelse(dTED_0and2<=(-10),"DN",ifelse(dTED_0and2>=10,"UP","NC")))%>%filter(!is.na(dTED_group))%>%
+  #group_by(dTED_group)#%>%sample_n(60)
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+
+```
+
+5.set CDF color
+```{r}
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+```
+
+```{R}
+
+pdf("Fig5_CDF(0.4h).pdf",width=3.3,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dTED_value,
+                col = dCPS_group,
+            geom = "step")) +
+ #labs( title =expression("Transcripts with "*" PAL decrease "*("1h"%->%"2h"))) +
+  xlab(expression(italic(Delta)*"PAL"))+labs(col=expression(italic(Delta)*"RNA"))+
+  ggtitle( expression("Genes with no "*italic(Delta)*"Txn (0 h vs 4 h)"))
+#+scale_color_manual(values=col)
+dev.off()
+
+
+
+
+```
+
+
+
+Time-course Txn change :with standard error.
+0vs1
+```{R}
+sample=final%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  #mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  #mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  #mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_1+1)/(CPS_0+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_0and1"=TED_1-TED_0)%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5),"Txn:NC","Txn"))%>%
+
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  sample_n(200)%>%ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))%>%
+  mutate(.PRO_0=(PRO_0-PRO_0))%>%
+  mutate(.PRO_1=(PRO_1-PRO_0))%>%
+  #mutate(.PRO_2=(PRO_2-PRO_2))%>%
+  #mutate(.PRO_4=(PRO_4-PRO_2))%>%
+  gather("time","txn",starts_with(".PRO_"))%>%
+  #filter(abs(txn)<0.2)%>%
+  separate("time",c("pro","prohour"),sep="_")%>%select(-pro)%>%mutate(prohour=as.numeric(prohour))
+
+df_summary=sample%>%group_by(prohour,dCPS_group)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+#df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+#df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_lower <- df_summary$mean + df_summary$sd
+df_summary$CI_upper <- df_summary$mean - df_summary$sd
+
+pdf("all TXN nc_PRO-seq_time-course0.1.pdf", width = 5, heigh=3)
+ggplot(df_summary, aes(x=prohour, y=mean)) +
+   geom_line(data=df_summary, aes(x=prohour, y=mean,group=dCPS_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dCPS_group,fill=dCPS_group), alpha=0.3)+scale_fill_manual(values=col)+theme_bw()+labs( title =expression("0h"%->%"1h"))+
+  ylab("mean(Transcription)±sd")+ylim(c(-1.5,1.5))+xlab("hour")+labs(fill = expression(Delta*"RNA"))+facet_grid(.~dCPS_group)+ scale_x_continuous(breaks=c(0,1))
+dev.off()
+
+
+```
+
+0vs2
+```{R}
+sample=final%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_0and2"=PRO_4-PRO_2)%>%
+  #mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_2+1)/(CPS_0+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_0and1"=TED_2-TED_0)%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_0and2)<(0.5)&abs(dPRO_1and2)<(0.5),"Txn:NC","Txn"))%>%
+
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  #sample_n(200)%>%
+  ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))%>%
+  mutate(.PRO_0=(PRO_0-PRO_0))%>%
+  mutate(.PRO_1=(PRO_1-PRO_0))%>%
+  mutate(.PRO_2=(PRO_2-PRO_0))%>%
+  #mutate(.PRO_4=(PRO_4-PRO_2))%>%
+  gather("time","txn",starts_with(".PRO_"))%>%
+  #filter(abs(txn)<0.2)%>%
+  separate("time",c("pro","prohour"),sep="_")%>%select(-pro)%>%mutate(prohour=as.numeric(prohour))
+
+df_summary=sample%>%group_by(prohour,dCPS_group)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+#df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+#df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_lower <- df_summary$mean + df_summary$sd
+df_summary$CI_upper <- df_summary$mean - df_summary$sd
+
+pdf("all TXN nc_PRO-seq_time-course0.2.pdf", width = 5, heigh=3)
+ggplot(df_summary, aes(x=prohour, y=mean)) +
+   geom_line(data=df_summary, aes(x=prohour, y=mean,group=dCPS_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dCPS_group,fill=dCPS_group), alpha=0.3)+scale_fill_manual(values=col)+theme_bw()+labs( title =expression("0h"%->%"2h"))+
+  ylab("mean(Transcription)±sd")+ylim(c(-1.5,1.5))+xlab("hour")+labs(fill = expression(Delta*"RNA"))+facet_grid(.~dCPS_group)+ scale_x_continuous(breaks=c(0,1,2))
+dev.off()
+
+
+```
+
+1vs2
+```{R}
+sample=final%>%
+  #mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  #mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  #mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_2+1)/(CPS_1+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_0and1"=TED_2-TED_1)%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_1and2)<(0.5),"Txn:NC","Txn"))%>%
+
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  #sample_n(200)%>%
+  ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))%>%
+  #mutate(.PRO_0=(PRO_0-PRO_0))%>%
+  mutate(.PRO_1=(PRO_1-PRO_1))%>%
+  mutate(.PRO_2=(PRO_2-PRO_1))%>%
+  #mutate(.PRO_4=(PRO_4-PRO_2))%>%
+  gather("time","txn",starts_with(".PRO_"))%>%
+  #filter(abs(txn)<0.2)%>%
+  separate("time",c("pro","prohour"),sep="_")%>%select(-pro)%>%mutate(prohour=as.numeric(prohour))
+
+df_summary=sample%>%group_by(prohour,dCPS_group)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+#df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+#df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_lower <- df_summary$mean + df_summary$sd
+df_summary$CI_upper <- df_summary$mean - df_summary$sd
+
+pdf("all TXN nc_PRO-seq_time-course1.2.pdf", width = 5, heigh=3)
+ggplot(df_summary, aes(x=prohour, y=mean)) +
+   geom_line(data=df_summary, aes(x=prohour, y=mean,group=dCPS_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dCPS_group,fill=dCPS_group), alpha=0.3)+scale_fill_manual(values=col)+theme_bw()+labs( title =expression("1h"%->%"2h"))+
+  ylab("mean(Transcription)±sd")+ylim(c(-1.5,1.5))+xlab("hour")+labs(fill = expression(Delta*"RNA"))+facet_grid(.~dCPS_group)+ scale_x_continuous(breaks=c(1,2))
+dev.off()
+
+
+```
+
+
+2vs4
+```{R}
+sample=final%>%
+  mutate("dPRO_1and4"=PRO_4-PRO_1)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  #mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_4+1)/(CPS_2+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_value"=TED_4-TED_2)%>%
+  #select(newid,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_2and4)<(0.5),"Txn:NC","Txn"))%>%
+  filter(dPRO_group=="Txn:NC")%>%
+   mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  #sample_n(1500)%>%
+  ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))%>%
+  #mutate(.PRO_0=(PRO_0-PRO_0))%>%
+  #mutate(.PRO_1=(PRO_1-PRO_0))%>%
+  mutate(.PRO_2=(PRO_2-PRO_2))%>%
+  mutate(.PRO_4=(PRO_4-PRO_2))%>%
+  gather("time","txn",starts_with(".PRO_"))%>%
+  #filter(abs(txn)<0.2)%>%
+  separate("time",c("pro","prohour"),sep="_")%>%select(-pro)%>%mutate(prohour=as.numeric(prohour))
+
+df_summary=sample%>%group_by(prohour,dCPS_group)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+#df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+#df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_lower <- df_summary$mean + df_summary$sd
+df_summary$CI_upper <- df_summary$mean - df_summary$sd
+
+pdf("all TXN nc_PRO-seq_time-course2.4.pdf", width = 5, heigh=3)
+ggplot(df_summary, aes(x=prohour, y=mean)) +
+   geom_line(data=df_summary, aes(x=prohour, y=mean,group=dCPS_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dCPS_group,fill=dCPS_group), alpha=0.3)+scale_fill_manual(values=col)+theme_bw()+labs( title =expression("2h"%->%"4h"))+
+  ylab("mean(Transcription)±sd")+ylim(c(-1.5,1.5))+xlab("hour")+labs(fill = expression(Delta*"RNA"))+facet_grid(.~dCPS_group)+ scale_x_continuous(breaks=c(2,4))
+dev.off()
+
+
+```
+1vs4
+```{R}
+sample=
+  sample=final%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  mutate("dPRO_1and4"=PRO_4-PRO_1)%>%
+  mutate("dCPS_value"=log2((CPS_4+1)/(CPS_1+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_value"=TED_4-TED_1)%>%
+  #select(newid,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_1and2)<(0.5)&abs(dPRO_1and4)<(0.5)&abs(dPRO_2and4)<(0.5),"Txn:NC","Txn"))%>%
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  #sample_n(500)%>%
+  ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))%>%
+  #mutate(.PRO_0=(PRO_0-PRO_0))%>%
+  mutate(.PRO_1=(PRO_1-PRO_1))%>%
+  mutate(.PRO_2=(PRO_2-PRO_1))%>%
+  mutate(.PRO_4=(PRO_4-PRO_1))%>%
+  gather("time","txn",starts_with(".PRO_"))%>%
+  #filter(abs(txn)<0.2)%>%
+  separate("time",c("pro","prohour"),sep="_")%>%select(-pro)%>%mutate(prohour=as.numeric(prohour))
+
+
+  
+
+
+
+df_summary=sample%>%group_by(prohour,dCPS_group)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+#df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+#df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_lower <- df_summary$mean + df_summary$sd
+df_summary$CI_upper <- df_summary$mean - df_summary$sd
+
+
+pdf("all TXN nc_PRO-seq_time-course1.4.pdf", width = 5, heigh=3)
+ggplot(df_summary, aes(x=prohour, y=mean)) +
+   geom_line(data=df_summary, aes(x=prohour, y=mean,group=dCPS_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dCPS_group,fill=dCPS_group), alpha=0.3)+scale_fill_manual(values=col)+theme_bw()+
+  labs( title =expression("1h"%->%"4h"))+ylab("mean(Transcription)±sd")+ylim(c(-1.5,1.5))+xlab("hour")+labs(fill = expression(Delta*"RNA"))+
+  #facet_grid(.~dCPS_group)+
+  scale_x_continuous(breaks=c(1,2,4))
+dev.off()
+
+sample%>%group_by(dCPS_group)%>%summarise(n=n(),mean=median(dTED_value))
+
+```
+
+0 vs 4
+```{R}
+sample=
+  sample=final%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_4+1)/(CPS_0+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_value"=TED_4-TED_0)%>%
+  #select(newid,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_1and2)<(0.5)&abs(dPRO_2and4)<(0.5)&abs(dPRO_0and4)<(0.5),"Txn:NC","Txn"))%>%
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  #sample_n(500)%>%
+  ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))%>%
+  mutate(.PRO_0=(PRO_0-PRO_0))%>%mutate(.PRO_1=(PRO_1-PRO_0))%>%mutate(.PRO_2=(PRO_2-PRO_0))%>%mutate(.PRO_4=(PRO_4-PRO_0))%>%
+  gather("time","txn",starts_with(".PRO_"))%>%
+  #filter(abs(txn)<0.2)%>%
+  separate("time",c("pro","prohour"),sep="_")%>%select(-pro)%>%mutate(prohour=as.numeric(prohour))
+
+
+  
+
+
+
+df_summary=sample%>%group_by(prohour,dCPS_group)%>%summarise(n=n(),mean=mean(txn),sd=sd(txn),se = sd(txn, na.rm=T)/sqrt(sum(!is.na(txn))))
+#df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+#df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_lower <- df_summary$mean + df_summary$sd
+df_summary$CI_upper <- df_summary$mean - df_summary$sd
+
+
+pdf("all TXN nc_PRO-seq_time-course0.4.pdf", width = 5, heigh=3)
+ggplot(df_summary, aes(x=prohour, y=mean)) +
+   geom_line(data=df_summary, aes(x=prohour, y=mean,group=dCPS_group), size=1, alpha=0.8)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=dCPS_group,fill=dCPS_group), alpha=0.3)+scale_fill_manual(values=col)+theme_bw()+
+  labs( title =expression("0h"%->%"4h"))+ylab("mean(Transcription)±sd")+ylim(c(-1.5,1.5))+xlab("hour")+labs(fill = expression(Delta*"RNA"))+facet_grid(.~dCPS_group)
+dev.off()
+
+sample%>%group_by(dCPS_group)%>%summarise(n=n(),mean=median(dTED_value))
+
+```
+
+
+
+```{r}
+sample=
+  sample=final%>%
+  mutate("dPRO_0and1"=PRO_1-PRO_0)%>%
+  mutate("dPRO_1and2"=PRO_2-PRO_1)%>%
+  mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_4+1)/(CPS_0+1)))%>%
+  #mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  #mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_value"=TED_4-TED_0)%>%
+  #select(newid,starts_with("d"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_1and2)<(0.5)&abs(dPRO_2and4)<(0.5)&abs(dPRO_0and4)<(0.5),"Txn:NC","Txn"))%>%
+  filter(dPRO_group=="Txn:NC")%>%
+  mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP","NC")))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.3),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.7),"UP","NC")))%>%
+  group_by(dCPS_group)%>%
+  #sample_n(500)%>%
+  ungroup()%>%
+  mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NC","UP")))
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+#col = c ("#56B4E9","#999999","#E69F00")
+pdf("Txn:NC_RNA(0.4).pdf",width=2,height=2)
+ggplot(sample%>%filter(dPRO_group=="Txn:NC"),aes(x=dPRO_group,y=dCPS_value))+geom_dotplot(aes(fill=dCPS_group,col=dCPS_group),binaxis="y", stackdir="center",method="histodot", binwidth=0.05,dotsize=0.4)+scale_color_manual(name=expression(italic(Delta)*"RNA group"),values = col) +scale_fill_manual(name=expression(italic(Delta)*"RNA group"),values = col)+
+  theme_bw()+
+  ylab(expression(italic(Delta)*"RNA"))+xlab("")
+dev.off()
+
+```
+
+
+
+
+
+#####
+4.3 Temporal order(dPAL followed by dRNA.)
+Regardless of transcriptional change, CDF plot for transcripts with dPAL(1->2)<0
+Fig6C.
+```{R}
+#sample
+head(final)
+sample=final%>%mutate("dCPS_1and2"=log2((CPS_2+1)/(CPS_1+1)))%>%mutate("dCPS_2and4"=log2((CPS_4+1)/(CPS_2+1)))%>%mutate("dTED_1and2"=TED_2-TED_1)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_1and2<=(-10),"PAL_DN",ifelse(dTED_1and2>=10,"PAL_UP","PAL_NC")))%>%
+  gather("dCPS_diff","dCPS_value",-newid,-dTED_1and2,-dTED_group)
+sample%>%group_by(dTED_group,dCPS_diff)%>%summarise(n())
+```
+5. Set CDF color
+```{R}
+col = yk.col(7)[c(2,5)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-1.5, 1.5) +
+  ylab("Cumulative fraction")
+```
+6. Draw CDF plot for transcripts with decrease in PAL between 1h and 2h.
+```{R}
+pdf("F6C_TNFlikebehavior_PALdecrease.pdf",width=4.5,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample%>%filter(dTED_group=="PAL_DN"),
+            aes(x = dCPS_value,
+                col = dCPS_diff),
+            geom = "step") +
+  labs( title =expression("Transcripts with "*" PAL decrease "*("1h"%->%"2h"))) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression(italic(Delta)*"RNA abundance"))+
+  scale_color_manual( 
+                        labels = c(expression("1h" %->%"2h"), expression("2h" %->% "4h")),values=col)
+dev.off()
+
+pdf("F6C_TNFlikebehavior_PALincrease.pdf",width=4.5,height=2.5)
+cdf_common +
+  stat_ecdf(data = sample%>%filter(dTED_group=="PAL_UP"),
+            aes(x = dCPS_value,
+                col = dCPS_diff),
+            geom = "step") +
+  labs( title =expression("Transcripts with "*" PAL increase "*("1h"%->%"2h"))) +
+  xlab(expression(italic(Delta)*"RNA"))+labs(col=expression(italic(Delta)*"RNA abundance"))+
+  scale_color_manual( 
+                        labels = c(expression("1h" %->%"2h"), expression("2h" %->% "4h")),values=col)
+samp.test=sample%>%filter(dTED_group=="PAL_DN")
+samp.test=sample%>%filter(dTED_group=="PAL_UP")
+ks.test(samp.test$dCPS_value[samp.test$dCPS_diff=="dCPS_2and4"],samp.test$dCPS_value[samp.test$dCPS_diff=="dCPS_1and2"])
+```
+
+

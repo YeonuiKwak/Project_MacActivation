@@ -1,0 +1,120 @@
+---
+title: "Fig5B_2 dRNA/dTXN"
+author: "Yeonui+Kwak"
+date: "10/8/2020"
+output: html_document
+---
+##WIthout sampling of dTXN , use dRNA/dTXN.
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig5/Rcode/step2/")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+
+3. Load data
+
+
+```{R}
+final<-read.table("PRO_TED_CPS.readcounttable.txt",sep="\t",header=T,stringsAsFactors = F)
+head(final)
+final%>%filter(hgnc=="TNF")
+```
+
+4. Normalize txn distribution :0 vs 4
+```{R}
+
+tmp=final%>%ungroup()%>%
+  mutate(dPRO=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_4+1)/(CPS_0+1)))%>%
+  mutate("dCPS.dTXN_value"=scale(dCPS_value-dPRO))%>%
+  mutate("dTED_value"=TED_4-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  #mutate("dCPS_group"=ifelse(dCPS_value<(-1),"DN",ifelse(dCPS_value>1,"UP",ifelse(abs(dCPS_value)<0.5,"NC","NA"))))%>%filter(dCPS_group!="NA")
+    mutate("dCPS.dTXN_group"=ifelse(dCPS.dTXN_value<(-1),"DN",ifelse(dCPS.dTXN_value>1,"UP",ifelse(abs(dCPS.dTXN_value)<0.5,"NC","NA"))))%>%filter(dCPS.dTXN_group!="NA")
+
+ks.test(tmp$dTED_value[sample$dCPS.dTXN_group=="UP"],tmp$dTED_value[sample$dCPS.dTXN_group=="DN"])
+```
+
+5. Set CDF color (N=3)
+```{R}
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(c(-20,20)) +
+  ylab("Cumulative fraction")
+```
+
+6. Draw CDF plot for transcripts : dPAL and dRNA association between 0h and 1h.
+```{R}
+pdf("F5B_0h-4h_CDFplot.pdf",width=5,height=3)
+cdf_common +
+  stat_ecdf(data = tmp,
+            aes(x = dTED_value,
+                col = dCPS.dTXN_group),
+            geom = "step") +scale_color_manual(name=expression(italic(Delta)*"RNA/"*italic(Delta)*"TXN"),values=col)+
+  labs( title =expression("0h"%->%"4h")) +xlim(c(-20,20))+
+  xlab(expression(italic(Delta)*"PAL"))
+dev.off()
+```
+
+
+
+0 vs 4
+group_by TED-seq
+```{R}
+# set up cut-off values 
+#dpro.breaks <- seq(-5,5,1)
+tmp=final%>%ungroup()%>%
+  mutate(dPRO=PRO_4-PRO_0)%>%
+  mutate("dCPS_value"=log2((CPS_4+1)/(CPS_0+1)))%>%
+  mutate("dCPS.dTXN_value"=scale(dCPS_value-dPRO))%>%
+  mutate("dTED_value"=TED_4-TED_0)%>%
+  select(newid,starts_with("d"))%>%
+  mutate("dTED_group"=ifelse(dTED_value<(-8),"DN",ifelse(dTED_value>8,"UP",ifelse(abs(dTED_value)<3,"NC","NA"))))%>%filter(dTED_group!="NA")
+
+tmp%>%group_by(dTED_group)%>%summarise(n())
+ks.test(sample$dCPS_value[sample$dTED_group=="UP"],sample$dCPS_value[sample$dTED_group=="DN"])
+```
+
+5. Set CDF color (N=3)
+```{R}
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(c(-4,4)) +
+  ylab("Cumulative fraction")
+```
+
+6. Draw CDF plot for transcripts : dPAL and dRNA association between 0h and 1h.
+```{R}
+pdf("F6_General_xaxis:0.4pdf",width=3.5,height=2.5)
+cdf_common +
+  stat_ecdf(data = tmp,
+            aes(x = dCPS.dTXN_value,
+                col = dTED_group),
+            geom = "step") +
+  labs( title =expression("0h"%->%"4h")) +
+  xlab(expression(italic(Delta)*"RNA/"*italic(Delta)*"TXN"))+labs(col=expression(italic(Delta)*"PAL"))#+
+dev.off()
+```

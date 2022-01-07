@@ -1,0 +1,53 @@
+---
+title: "Fig5_DEseq_dRNA grouping"
+author: "Yeonui+Kwak"
+date: "8/13/2020"
+output: html_document
+---
+1. CPS readcount ->Normalize by usnig DESeq2.
+```{R}
+setwd("/Users/yeonuikwak/Desktop/Publication_Mar/Final_Fig5/Rcode")
+library(raster)
+library(tidyverse)
+library(dplyr) 
+source("https://bioconductor.org/biocLite.R")
+biocLite("DESeq2")
+library(DESeq2)
+cps.raw  <-read.table("~/Desktop/ReadcountTable/TEDseq/table/refCPSreadCount.txt",sep="\t",head=T)
+
+cps.cor = cps.raw %>%
+  filter_if(is.numeric, all_vars(. > 0)) 
+head(cps.cor)
+# Dummy DESeq to get normalized CPS-seq read counts
+cps.rps = cps.cor %>%
+  mutate(t_0 = rowSums(.[2:3]),
+         t_1 = rowSums(.[4:5]),
+         t_2 = rowSums(.[6:7]),
+         t_4 = rowSums(.[8:9]),
+         id = CPSid) %>%
+  select(id, t_0, t_1, t_2, t_4)
+
+cps.mat = cps.rps[-1]
+cps.mat
+rownames(cps.mat) = cps.rps$id
+cpsInfo = data.frame(time = rep(c("early", "late"), each = 2),
+                     row.names = colnames(cps.mat))
+
+dds2 = DESeqDataSetFromMatrix(countData = cps.mat,
+                              colData = cpsInfo,
+                              design = ~ time)
+dds2 = DESeq(dds2)
+cps.cts = counts(dds2, norm = T)
+cps.cts = data.frame(cps.cts)%>%
+  mutate(id = rownames(cps.cts))%>%select(id, starts_with("t"))
+
+cps.t0 = cps.cor %>%
+  mutate(x = X0h.r1, y = X0h.r2)
+cps.t1 = cps.cor %>%
+  mutate(x = X1h.r1, y = X1h.r2)
+cps.t2 = cps.cor %>%
+  mutate(x = X2h.r1, y = X2h.r2)
+cps.t4 = cps.cor %>%
+  mutate(x = X4h.r1, y = X4h.r2)
+
+```

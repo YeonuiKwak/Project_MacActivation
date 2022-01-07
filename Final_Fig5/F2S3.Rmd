@@ -1,0 +1,185 @@
+---
+title: "dPAL_dRNA_heatmap"
+author: "Yeonui+Kwak"
+date: "2/10/2020"
+output: html_document
+---
+1. CPS readcount ->Normalize by usnig DESeq2.
+```{R}
+setwd("~/Desktop/ReadcountTable/CPScounttable/")
+library(raster)
+library(tidyverse)
+library(dplyr) 
+source("https://bioconductor.org/biocLite.R")
+biocLite("DESeq2")
+library(DESeq2)
+cps.raw  <-read.table("~/Desktop/ReadcountTable/TEDseq/table/refCPSreadCount.txt",sep="\t",head=T)
+
+cps.cor = cps.raw %>%
+  filter_if(is.numeric, all_vars(. > 0)) 
+head(cps.cor)
+# Dummy DESeq to get normalized CPS-seq read counts
+cps.rps = cps.cor %>%
+  mutate(t_0 = rowSums(.[2:3]),
+         t_1 = rowSums(.[4:5]),
+         t_2 = rowSums(.[6:7]),
+         t_4 = rowSums(.[8:9]),
+         id = CPSid) %>%
+  select(id, t_0, t_1, t_2, t_4)
+
+cps.mat = cps.rps[-1]
+cps.mat
+rownames(cps.mat) = cps.rps$id
+cpsInfo = data.frame(time = rep(c("early", "late"), each = 2),
+                     row.names = colnames(cps.mat))
+
+dds2 = DESeqDataSetFromMatrix(countData = cps.mat,
+                              colData = cpsInfo,
+                              design = ~ time)
+dds2 = DESeq(dds2)
+cps.cts = counts(dds2, norm = T)
+cps.cts = data.frame(cps.cts)%>%
+  mutate(id = rownames(cps.cts))%>%select(id, starts_with("t"))
+
+cps.t0 = cps.cor %>%
+  mutate(x = X0h.r1, y = X0h.r2)
+cps.t1 = cps.cor %>%
+  mutate(x = X1h.r1, y = X1h.r2)
+cps.t2 = cps.cor %>%
+  mutate(x = X2h.r1, y = X2h.r2)
+cps.t4 = cps.cor %>%
+  mutate(x = X4h.r1, y = X4h.r2)
+
+```
+2. Load PAL data.
+```{R}
+
+ted<-read.csv("~/Desktop/ReadcountTable/TEDseq/tmp/Processedfiles/TEDseq_all_medianPAL.final.txt",sep="\t",header=T, stringsAsFactors = F)
+ted=na.omit(ted)# clustering algorithms & visualization
+ted=ted%>%gather(sample,PAL,-id)%>% mutate(PAL=as.numeric(PAL))%>% spread(sample,PAL)
+#normalzied by spike-in
+ted$rep1_0=ted$rep1_0+13
+ted$rep1_1=ted$rep1_1+15
+ted$rep1_2=ted$rep1_2+13
+ted$rep1_4=ted$rep1_4+19
+ted$rep2_0=ted$rep2_0+16
+ted$rep2_1=ted$rep2_1+13
+ted$rep2_2=ted$rep2_2+12
+ted$rep2_4=ted$rep2_4+8
+ted=as_tibble(ted)
+
+ted.all=ted%>%gather(sample,pal,-id)%>%separate(sample,c("replicate","time"),sep="_")%>%group_by(id,time)%>%summarise(mean =mean(pal))%>%
+  ungroup()%>% spread(time,mean)
+colnames(ted.all)[2:5]=c("t_0", "t_1", "t_2", "t_4")
+head(ted.all)
+```
+
+
+
+
+
+
+
+
+#Correlation heatmap.
+```{R}
+dcps = cps.cts %>%
+	mutate(d_0_1 = log2(t_1 / t_0),
+	       d_0_2 = log2(t_2 / t_0),
+	       d_1_2 = log2(t_2 / t_1),
+	       d_0_4 = log2(t_4 / t_0),
+	       d_1_4 = log2(t_4 / t_1),
+	       d_2_4 = log2(t_4 / t_2)) %>%
+	select(id, contains("d")) 
+
+#%>%right_join(genes.cm, by = "id")
+head(dcps)
+dpal = ted.all %>%
+	mutate(d_0_1 = (t_1 - t_0),
+	       d_0_2 = (t_2 - t_0),
+	       d_1_2 = (t_2 - t_1),
+	       d_0_4 = (t_4 - t_0),
+	       d_1_4 = (t_4 - t_1),
+	       d_2_4 = (t_4 - t_2)) %>%
+	select(id, contains("d"))%>%
+	inner_join(dcps, by = "id")
+
+head(dpal)
+```
+
+# Correlation heatmap between pseudo_timecourse of 
+```{R}
+library(grid)
+	yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "#999999", "goldenrod2", "orangered1", "red") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+col = yk.col(101)
+br = -50:50/100
+pdf("pdf/FigS3E.pdf", width = 3.2, height = 3)
+mat = cor(dpal[c(8,9,11,10,12,13)],dpal[c(2,3,5,4,6,7)])
+labels = c(expression(0*h %->% 1*h),
+	   expression(0*h %->% 2*h),
+	   expression(0*h %->% 4*h),
+	   expression(1*h %->% 2*h),
+	   expression(1*h %->% 4*h),
+	   expression(2*h %->% 4*h))
+install.packages("pheatmap")
+library(pheatmap)
+pdf("heatmap_dPAL_dCPS_alltranscript.pdf", width = 3.2, height = 3)
+pheatmap(mat,
+	cluster_rows = F,
+	cluster_cols = F,
+	labels_row = labels,
+	labels_col = labels,
+	breaks = br,
+	color = col,
+	main = expression(italic(Delta)*RNA-italic(Delta)*PAL~correlation))
+dev.off()
+
+
+```
+
+
+transcripts with no TXN change.
+```{R}
+final<-read.table("PRO_TED_CPS_unscaled_2.txt",sep="\t",head=T)
+TXN.NC=final%>%
+  select(starts_with("PRO"),ID)%>%
+  filter(abs(PRO_1-PRO_0)<(0.5)&abs(PRO_2-PRO_1)<(0.5)&abs(PRO_4-PRO_2)<(0.5)&abs(PRO_4-PRO_0)<(0.5))%>%rename("id"=ID)
+TXN.NC=inner_join(TXN.NC,dpal,by="id")%>%select(id,starts_with("d"))
+nrow(TXN.NC)
+
+mat = cor(TXN.NC[c(8,9,11,10,12,13)],TXN.NC[c(2,3,5,4,6,7)])
+labels = c(expression(0*h %->% 1*h),
+	   expression(0*h %->% 2*h),
+	   expression(0*h %->% 4*h),
+	   expression(1*h %->% 2*h),
+	   expression(1*h %->% 4*h),
+	   expression(2*h %->% 4*h))
+install.packages("pheatmap")
+library(grid)
+library(pheatmap)
+pdf("heatmap_dPAL_dCPS_noTxnchange.pdf", width = 3.2, height = 3)
+#setHook("grid.newpage", function() pushViewport(viewport(x=1,y=1,width=0.9, height=0.9, name="vp", just=c("right","top"))), action="prepend")
+
+
+pheatmap(mat,
+	cluster_rows = F,
+	cluster_cols = F,
+	labels_row = labels,
+	labels_col = labels,
+	breaks = br,
+	color = col,
+	main = expression(italic(Delta)*RNA-italic(Delta)*PAL~"correlation"))
+#setHook("grid.newpage", NULL, "replace")
+#grid.text(expression(italic(Delta)*PAL), y=-0.07, gp=gpar(fontsize=16))
+#grid.text(expression(italic(Delta)*RNA), x=-0.07, rot=90, gp=gpar(fontsize=16))
+
+dev.off()
+
+
+```

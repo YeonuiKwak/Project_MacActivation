@@ -1,0 +1,459 @@
+---
+title: "Fig5_5A_dTXNand dPAL"
+author: "Yeonui+Kwak"
+date: "8/23/2020"
+output: html_document
+---
+
+
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig5/Rcode/step1/")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+3. Load sample
+
+```{R}
+pal<-read.table("custom.meanPAL.acrossalltimepoints.txt",header=T, stringsAsFactors = F)
+pal=pal%>%dplyr::select(hgnc,newid,X0,X1,X2,X4)
+colnames(pal)=c("hgnc","newid",paste("TED",c(0,1,2,4),sep = "_"))
+head(pal)
+#pal=pal%>%
+  #separate(newid,c("id","refpos","CPSpos"),sep=":",remove = F)%>%unite("newid2",c(id,CPSpos),sep=":",remove=F)%>%
+  #rename(newid_old=newid)%>%
+  #rename(newid=newid2)%>%
+  #dplyr::dplyr::select(-hgnc)
+head(rna)
+rna<-read.table("temporal3pseq_n10603.ALE.tandem.tandemcluster.txt",header=T, stringsAsFactors = F)
+rna%>%separate(cluster,c("hgnc","a","b"),sep=":")%>%filter(hgnc=="ZFP36")
+#rna<-read.table("3pseq.all.temporalCPSsamples.ALE.tandemUTR.annotation.2020.06.15.txt",header=T, stringsAsFactors = F)
+rna=rna%>%dplyr::select(-cps.ratio.perhgnc)%>%arrange(newid,time)%>%distinct_at(vars(newid,time),.keep_all = T)
+rna=rna%>%
+  #separate(CPSid,c("chr","CPSpos"),sep=":",remove=F)%>%unite("newid",c(id,CPSpos),sep = ":")%>%
+  dplyr::select(newid,readcount,time,id)%>%spread(time,readcount)
+head(rna)
+colnames(rna)=c("newid","id",paste("CPS",c(0,1,2,4),sep = "_"))
+
+txn<-read.table("finalPRO_log2RPKM.txt",sep="\t",header=T, stringsAsFactors = F)
+colnames(txn)=c("id",paste("PRO",c(0,1,2,4),sep = "_"))
+colnames(pal);colnames(rna);colnames(txn)
+all=pal%>%inner_join(rna,by="newid")%>%inner_join(txn,by="id")
+cat("total number of genes in all three datasets:",nrow(all))
+head(all) #5378
+all%>%summarise(n_distinct(hgnc)) #4476
+all%>%summarise(n_distinct(newid))#5378
+write.table(all,"PRO_TED_CPS.readcounttable.txt",col.names = T,row.names = F,sep="\t",quote = F) 
+#cps,ted custom version.
+
+```
+```{R}
+final<-read.table("PRO_TED_CPS.readcounttable.txt",sep="\t",header=T,stringsAsFactors = F)
+```
+
+
+
+
+
+dPRO ~ dPAL
+
+0 VS 1
+```{R}
+sample_1=
+final%>%
+  select(starts_with("PRO"),starts_with("CPS"),starts_with("TED"),newid)%>%
+  mutate(dTxn=(PRO_1-PRO_0),dRNA=log2(CPS_1/CPS_0),dPAL=TED_1-TED_0)%>%select(c(newid,starts_with("d"),starts_with("PRO")))%>%
+  mutate("dPRO_group"=cut(dTxn, breaks=c(-4,-2,-1,0,1,2,4)))%>%
+  filter(dPRO_group!="NA")%>%
+  ungroup()
+
+sample_1%>%group_by(dPRO_group)%>%summarise(n())
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+
+
+col = yk.col(7)[2:7]
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+str(sample)
+pdf("Fig5A_CDFplot_0h-1h_dTXN_dPAL.pdf",width=4,height=2.5)
+  #sc <- scale_colour_gradientn(colours = yk.col(100), limits=c(-3, 3))
+cdf_common +
+  stat_ecdf(data = sample_1,
+            aes(x = (dPAL),
+                col = as.factor(dPRO_group)),
+            geom = "step") +labs(color = expression(Delta*"TXN"))+
+  xlab(expression(italic(Delta)*"PAL(nt)"))+
+  #scale_color_manual(values=col,name = "Transcription \n [log2 FC]", labels =  c(3,2,1,0,-1,-2,-3))
+ggtitle("0 h vs 1 h")
+dev.off()
+```
+
+
+````{R}
+
+col = yk.col(7)[2:7]
+bar=sample_1%>%group_by(dPRO_group)%>%summarise(n=n(),mean=mean(dPAL),sd=sd(dPAL))
+pdf("Fig5A_Barplot.0h-1h.dTXN_dPAL.pdf",width=2,height=2.5)
+ggplot(bar,aes(x=dPRO_group,y=mean,fill=dPRO_group))+geom_col()+scale_fill_manual(name=expression(Delta*"TXN"),values=col)+
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width=0.1)+theme_bw()+
+  labs(y=expression("Mean"*Delta*"PAL ± s.d.(nt)"), x = "Transcription \n [PRO-seq log2 FC(1h/0h)]")+geom_hline(yintercept=10,linetype="dashed",alpha=0.4)+
+  geom_hline(yintercept=(-10),linetype="dashed",alpha=0.4)+ggtitle("0h vs 1 h")+ theme(legend.position = "none")
+dev.off()
+
+#ks.test
+ks.test(sample_1$dPAL[sample_1$dPRO_group=="(2,4]"],sample_1$dPAL[sample_1$dPRO_group=="(-4,-2]"])
+
+```
+
+1 VS 2
+```{R}
+sample_1=
+final%>%
+  select(starts_with("PRO"),starts_with("CPS"),starts_with("TED"),newid)%>%
+  mutate(dTxn=(PRO_2-PRO_1),dRNA=log2(CPS_2/CPS_1),dPAL=TED_2-TED_1)%>%select(c(newid,starts_with("d"),starts_with("PRO")))%>%
+   mutate("dTED_group"=ifelse(dPAL<(-10),"DN",ifelse(dPAL>(10),"UP",ifelse(abs(dPAL)<5,"NC","NA"))))%>%#%>%filter(dTED_group!="NA")%>%
+  mutate("dPRO_group"=cut(dTxn, breaks=c(-4,-1,0,1,4)))%>%
+  #mutate("dPRO_group"=ifelse(dTxn<(-2),-2,ifelse(dTxn<(-1),-1,ifelse(dTxn<(-1),-1,ifelse(dTxn>3,3,ifelse(dTxn>2,2,ifelse(dTxn>1,1,ifelse(abs(dTxn)<0.5,0,"NA"))))))))%>%
+  filter(dPRO_group!="NA")%>%
+  #mutate(dPRO_group=as.numeric(dPRO_group))%>%
+  #mutate(dPRO_group=factor(dPRO_group,levels=c(3,2,1,0,-1,-2,-3)[7:1]))%>%
+  group_by(dPRO_group)%>%
+  #sample_n(70)%>%
+  ungroup()
+head(sample_1)
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+
+
+col = yk.col(7)[2:7]
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+str(sample)
+pdf("cdf_ dPALvsdTXN.1.2h.pdf",width=4,height=2.5)
+  #sc <- scale_colour_gradientn(colours = yk.col(100), limits=c(-3, 3))
+cdf_common +
+  stat_ecdf(data = sample_1,
+            aes(x = (dPAL),
+                col = as.factor(dPRO_group)),
+            geom = "step") +labs(color = expression(Delta*"PRO"))+
+  xlab(expression(italic(Delta)*"PAL(nt)"))+
+  #scale_color_manual(values=col,name = "Transcription \n [log2 FC]", labels =  c(3,2,1,0,-1,-2,-3))
+ggtitle("1 h vs 2 h")
+dev.off()
+pdf("barplot.dTxn,dPAL.1.2h.pdf",width=4,height=2.5)
+col = yk.col(7)[2:7]
+bar=sample_1%>%group_by(dPRO_group)%>%summarise(n=n(),mean=mean(dPAL),sd=sd(dPAL))#%>%mutate(rel.mean=mean+7)
+  #bar=bar%>% mutate(dPRO_group=factor(dPRO_group,levels=c(-3,-2,-1,0,1,2,3)))
+ggplot(bar,aes(x=dPRO_group,y=mean,fill=dPRO_group))+geom_col()+scale_fill_manual(name=expression(Delta*"PRO"),values=col)+
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width=0.1)+theme_bw()+
+  labs(y=expression("Mean"*Delta*"PAL ± s.d.(nt)"), x = "Transcription \n [log2 PRO-seq(2h/1h)]")+geom_hline(yintercept=10,linetype="dashed",alpha=0.4)+
+  geom_hline(yintercept=(-10),linetype="dashed",alpha=0.4)+ggtitle("1 h vs 2 h")
+dev.off()
+
+
+#ks.test
+ks.test(sample_1$dPAL[sample_1$dPRO_group=="(1,4]"],sample_1$dPAL[sample_1$dPRO_group=="(-4,-1]"])
+```
+
+2 VS 4
+```{R}
+sample_1=
+final%>%
+  select(starts_with("PRO"),starts_with("CPS"),starts_with("TED"),newid)%>%
+  mutate(dTxn=(PRO_4-PRO_2),dRNA=log2(CPS_4/CPS_2),dPAL=TED_4-TED_2)%>%select(c(newid,starts_with("d"),starts_with("PRO")))%>%
+   mutate("dTED_group"=ifelse(dPAL<(-10),"DN",ifelse(dPAL>(10),"UP",ifelse(abs(dPAL)<5,"NC","NA"))))%>%#%>%filter(dTED_group!="NA")%>%
+  mutate("dPRO_group"=cut(dTxn, breaks=c(-4,-1,0,1,4)))%>%
+  #mutate("dPRO_group"=ifelse(dTxn<(-2),-2,ifelse(dTxn<(-1),-1,ifelse(dTxn<(-1),-1,ifelse(dTxn>3,3,ifelse(dTxn>2,2,ifelse(dTxn>1,1,ifelse(abs(dTxn)<0.5,0,"NA"))))))))%>%
+  filter(dPRO_group!="NA")%>%
+  #mutate(dPRO_group=as.numeric(dPRO_group))%>%
+  #mutate(dPRO_group=factor(dPRO_group,levels=c(3,2,1,0,-1,-2,-3)[7:1]))%>%
+  group_by(dPRO_group)%>%
+  #sample_n(70)%>%
+  ungroup()
+head(sample_1)
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+
+
+col = yk.col(7)[2:7]
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+str(sample)
+pdf("cdf_ dPALvsdTXN.2.4h.pdf",width=4,height=2.5)
+  #sc <- scale_colour_gradientn(colours = yk.col(100), limits=c(-3, 3))
+cdf_common +
+  stat_ecdf(data = sample_1,
+            aes(x = (dPAL),
+                col = as.factor(dPRO_group)),
+            geom = "step") +labs(color = expression(Delta*"PRO"))+
+  xlab(expression(italic(Delta)*"PAL(nt)"))+
+  #scale_color_manual(values=col,name = "Transcription \n [log2 FC]", labels =  c(3,2,1,0,-1,-2,-3))
+ggtitle("2 h vs 4 h")
+dev.off()
+
+pdf("barplot.dTxn,dPAL.2.4h.pdf",width=4,height=2.5)
+col = yk.col(7)[2:7]
+bar=sample_1%>%group_by(dPRO_group)%>%summarise(n=n(),mean=mean(dPAL),sd=sd(dPAL))#%>%mutate(rel.mean=mean+7)
+  #bar=bar%>% mutate(dPRO_group=factor(dPRO_group,levels=c(-3,-2,-1,0,1,2,3)))
+ggplot(bar,aes(x=dPRO_group,y=mean,fill=dPRO_group))+geom_col()+scale_fill_manual(name=expression(Delta*"PRO"),values=col)+
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width=0.1)+theme_bw()+
+  labs(y=expression("Mean"*Delta*"PAL ± s.d.(nt)"), x = "Transcription \n [log2 PRO-seq(4h/2h)]")+geom_hline(yintercept=10,linetype="dashed",alpha=0.4)+
+  geom_hline(yintercept=(-10),linetype="dashed",alpha=0.4)+ggtitle("2 h vs 4 h")
+dev.off()
+
+#ks.test
+ks.test(sample_1$dPAL[sample_1$dPRO_group=="(0,1]"],sample_1$dPAL[sample_1$dPRO_group=="(-1,0]"])
+```
+
+1 VS 4
+```{R}
+sample_1=
+final%>%
+  select(starts_with("PRO"),starts_with("CPS"),starts_with("TED"),newid)%>%
+  mutate(dTxn=(PRO_4-PRO_1),dRNA=log2(CPS_4/CPS_1),dPAL=TED_4-TED_1)%>%select(c(newid,starts_with("d"),starts_with("PRO")))%>%
+   mutate("dTED_group"=ifelse(dPAL<(-10),"DN",ifelse(dPAL>(10),"UP",ifelse(abs(dPAL)<5,"NC","NA"))))%>%#%>%filter(dTED_group!="NA")%>%
+  mutate("dPRO_group"=cut(dTxn, breaks=c(-4,-2,-1,0,1,2,4)))%>%
+  #mutate("dPRO_group"=ifelse(dTxn<(-2),-2,ifelse(dTxn<(-1),-1,ifelse(dTxn<(-1),-1,ifelse(dTxn>3,3,ifelse(dTxn>2,2,ifelse(dTxn>1,1,ifelse(abs(dTxn)<0.5,0,"NA"))))))))%>%
+  filter(dPRO_group!="NA")%>%
+  #mutate(dPRO_group=as.numeric(dPRO_group))%>%
+  #mutate(dPRO_group=factor(dPRO_group,levels=c(3,2,1,0,-1,-2,-3)[7:1]))%>%
+  group_by(dPRO_group)%>%
+  #sample_n(70)%>%
+  ungroup()
+head(sample_1)
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+
+
+col = yk.col(7)[2:7]
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+str(sample)
+pdf("cdf_ dPALvsdTXN.1.4h.pdf",width=4,height=2.5)
+  #sc <- scale_colour_gradientn(colours = yk.col(100), limits=c(-3, 3))
+cdf_common +
+  stat_ecdf(data = sample_1,
+            aes(x = (dPAL),
+                col = as.factor(dPRO_group)),
+            geom = "step") +labs(color = expression(Delta*"PRO"))+
+  xlab(expression(italic(Delta)*"PAL(nt)"))+
+  #scale_color_manual(values=col,name = "Transcription \n [log2 FC]", labels =  c(3,2,1,0,-1,-2,-3))
+ggtitle("1 h vs 4 h")
+dev.off()
+
+pdf("barplot.dTxn,dPAL.1.4h.pdf",width=4,height=2.5)
+col = yk.col(7)[2:7]
+bar=sample_1%>%group_by(dPRO_group)%>%summarise(n=n(),mean=mean(dPAL),sd=sd(dPAL))#%>%mutate(rel.mean=mean+7)
+  #bar=bar%>% mutate(dPRO_group=factor(dPRO_group,levels=c(-3,-2,-1,0,1,2,3)))
+ggplot(bar,aes(x=dPRO_group,y=mean,fill=dPRO_group))+geom_col()+scale_fill_manual(name=expression(Delta*"PRO"),values=col)+
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width=0.1)+theme_bw()+
+  labs(y=expression("Mean"*Delta*"PAL ± s.d.(nt)"), x = "Transcription \n [log2 PRO-seq(4h/1h)]")+geom_hline(yintercept=10,linetype="dashed",alpha=0.4)+
+  geom_hline(yintercept=(-10),linetype="dashed",alpha=0.4)+ggtitle("1 h vs 4 h")
+dev.off()
+
+#ks.test
+ks.test(sample_1$dPAL[sample_1$dPRO_group=="(0,1]"],sample_1$dPAL[sample_1$dPRO_group=="(-1,0]"])
+```
+
+0 VS 4
+```{R}
+sample_1=
+final%>%
+  select(starts_with("PRO"),starts_with("CPS"),starts_with("TED"),newid)%>%
+  mutate(dTxn=(PRO_4-PRO_0),dRNA=log2(CPS_4/CPS_0),dPAL=TED_4-TED_0)%>%select(c(newid,starts_with("d"),starts_with("PRO")))%>%
+   mutate("dTED_group"=ifelse(dPAL<(-10),"DN",ifelse(dPAL>(10),"UP",ifelse(abs(dPAL)<5,"NC","NA"))))%>%#%>%filter(dTED_group!="NA")%>%
+  mutate("dPRO_group"=cut(dTxn, breaks=c(-4,-2,-1,0,1,2,4)))%>%
+  #mutate("dPRO_group"=ifelse(dTxn<(-2),-2,ifelse(dTxn<(-1),-1,ifelse(dTxn<(-1),-1,ifelse(dTxn>3,3,ifelse(dTxn>2,2,ifelse(dTxn>1,1,ifelse(abs(dTxn)<0.5,0,"NA"))))))))%>%
+  filter(dPRO_group!="NA")%>%
+  #mutate(dPRO_group=as.numeric(dPRO_group))%>%
+  #mutate(dPRO_group=factor(dPRO_group,levels=c(3,2,1,0,-1,-2,-3)[7:1]))%>%
+  group_by(dPRO_group)%>%
+  #sample_n(70)%>%
+  ungroup()
+head(sample_1)
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+
+
+col = yk.col(7)[2:7]
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+str(sample)
+pdf("cdf_ dPALvsdTXN.0.4h.pdf",width=4,height=2.5)
+  #sc <- scale_colour_gradientn(colours = yk.col(100), limits=c(-3, 3))
+cdf_common +
+  stat_ecdf(data = sample_1,
+            aes(x = (dPAL),
+                col = as.factor(dPRO_group)),
+            geom = "step") +labs(color = expression(Delta*"PRO"))+
+  xlab(expression(italic(Delta)*"PAL(nt)"))+
+  #scale_color_manual(values=col,name = "Transcription \n [log2 FC]", labels =  c(3,2,1,0,-1,-2,-3))
+ggtitle("0 h vs 4 h")
+dev.off()
+
+pdf("barplot.dTxn,dPAL.0.4h.pdf",width=4,height=2.5)
+col = yk.col(7)[2:7]
+bar=sample_1%>%group_by(dPRO_group)%>%summarise(n=n(),mean=mean(dPAL),sd=sd(dPAL))#%>%mutate(rel.mean=mean+7)
+  #bar=bar%>% mutate(dPRO_group=factor(dPRO_group,levels=c(-3,-2,-1,0,1,2,3)))
+ggplot(bar,aes(x=dPRO_group,y=mean,fill=dPRO_group))+geom_col()+scale_fill_manual(name=expression(Delta*"PRO"),values=col)+
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width=0.1)+theme_bw()+
+  labs(y=expression("Mean"*Delta*"PAL ± s.d.(nt)"), x = "Transcription \n [log2 PRO-seq(4h/0h)]")+geom_hline(yintercept=10,linetype="dashed",alpha=0.4)+
+  geom_hline(yintercept=(-10),linetype="dashed",alpha=0.4)+ggtitle("0 h vs 4 h")
+dev.off()
+
+#ks.test
+ks.test(sample_1$dPAL[sample_1$dPRO_group=="(0,1]"],sample_1$dPAL[sample_1$dPRO_group=="(-1,0]"])
+```
+
+0 VS 2
+```{R}
+sample_1=
+final%>%
+  select(starts_with("PRO"),starts_with("CPS"),starts_with("TED"),newid)%>%
+  mutate(dTxn=(PRO_2-PRO_0),dRNA=log2(CPS_2/CPS_0),dPAL=TED_2-TED_0)%>%select(c(newid,starts_with("d"),starts_with("PRO")))%>%
+   mutate("dTED_group"=ifelse(dPAL<(-10),"DN",ifelse(dPAL>(10),"UP",ifelse(abs(dPAL)<5,"NC","NA"))))%>%#%>%filter(dTED_group!="NA")%>%
+  mutate("dPRO_group"=cut(dTxn, breaks=c(-4,-2,-1,0,1,2,4)))%>%
+  #mutate("dPRO_group"=ifelse(dTxn<(-2),-2,ifelse(dTxn<(-1),-1,ifelse(dTxn<(-1),-1,ifelse(dTxn>3,3,ifelse(dTxn>2,2,ifelse(dTxn>1,1,ifelse(abs(dTxn)<0.5,0,"NA"))))))))%>%
+  filter(dPRO_group!="NA")%>%
+  #mutate(dPRO_group=as.numeric(dPRO_group))%>%
+  #mutate(dPRO_group=factor(dPRO_group,levels=c(3,2,1,0,-1,-2,-3)[7:1]))%>%
+  group_by(dPRO_group)%>%
+  #sample_n(70)%>%
+  ungroup()
+head(sample_1)
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+
+
+col = yk.col(7)[2:7]
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-30,30) +
+  ylab("Cumulative fraction")
+
+str(sample)
+pdf("cdf_ dPALvsdTXN.0.2h.pdf",width=4,height=2.5)
+  #sc <- scale_colour_gradientn(colours = yk.col(100), limits=c(-3, 3))
+cdf_common +
+  stat_ecdf(data = sample_1,
+            aes(x = (dPAL),
+                col = as.factor(dPRO_group)),
+            geom = "step") +labs(color = expression(Delta*"PRO"))+
+  xlab(expression(italic(Delta)*"PAL(nt)"))+
+  #scale_color_manual(values=col,name = "Transcription \n [log2 FC]", labels =  c(3,2,1,0,-1,-2,-3))
+ggtitle("0 h vs 2 h")
+dev.off()
+
+pdf("barplot.dTxn,dPAL.0.2h.pdf",width=4,height=2.5)
+col = yk.col(7)[2:7]
+bar=sample_1%>%group_by(dPRO_group)%>%summarise(n=n(),mean=mean(dPAL),sd=sd(dPAL))#%>%mutate(rel.mean=mean+7)
+  #bar=bar%>% mutate(dPRO_group=factor(dPRO_group,levels=c(-3,-2,-1,0,1,2,3)))
+ggplot(bar,aes(x=dPRO_group,y=mean,fill=dPRO_group))+geom_col()+scale_fill_manual(name=expression(Delta*"PRO"),values=col)+
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width=0.1)+theme_bw()+
+  labs(y=expression("Mean"*Delta*"PAL ± s.d.(nt)"), x = "Transcription \n [log2 PRO-seq(2h/0h)]")+geom_hline(yintercept=10,linetype="dashed",alpha=0.4)+
+  geom_hline(yintercept=(-10),linetype="dashed",alpha=0.4)+ggtitle("0 h vs 2 h")
+dev.off()
+
+#ks.test
+ks.test(sample_1$dPAL[sample_1$dPRO_group=="(0,1]"],sample_1$dPAL[sample_1$dPRO_group=="(-1,0]"])
+```
+
+
+
+
+```{R}
+pdf("median difference in dPAL between dtxn groups_violinplot.pdf",width=4,height=2.5)
+col = yk.col(8)[2:8]
+ggplot(sample_1,aes(x=dPRO_group,y=dPAL,fill=dPRO_group))+geom_violin()+scale_fill_manual(values=col)+theme_bw()+
+  labs(y=expression(Delta*"PAL (nt)"), x = "Transcription \n [log2 FC]")+geom_hline(yintercept=10,linetype="dashed",alpha=0.4)+
+  geom_hline(yintercept=(-10),linetype="dashed",alpha=0.4)+ggtitle("0h vs 4 h")
+dev.off()
+```

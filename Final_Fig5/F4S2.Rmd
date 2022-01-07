@@ -1,0 +1,144 @@
+---
+title: "F4S2"
+author: "Yeonui+Kwak"
+date: "4/2/2020"
+output: html_document
+---
+
+
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig4/Tmp2")
+
+```
+2. Install libraries required for Dataprocessing.
+```{R}
+#install.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr) 
+#install.packages('ggbeeswarm')
+library(ggbeeswarm)
+```
+
+
+3. Load data
+```{R}
+
+pal<-read.table("REAL.final_PAL_data.txt",sep="\t",header=T, stringsAsFactors = F)
+colnames(pal)=c("id",paste("TED",c(0,1,2,4),sep = "_"))
+
+rna<-read.table("finalCPS.txt",header=T, stringsAsFactors = F)
+
+colnames(rna)=c("id","gene",paste("CPS",c(0,1,2,4),sep = "_"))
+txn<-read.table("finalPRO_log2RPKM.txt",sep="\t",header=T, stringsAsFactors = F)
+colnames(txn)=c("id",paste("PRO",c(0,1,2,4),sep = "_"))
+colnames(pal);colnames(rna);colnames(txn)
+all=pal%>%inner_join(rna,by="id")%>%inner_join(txn,by="id")
+cat("total number of genes in all three datasets:",nrow(all))
+head(all)
+
+```
+
+4. Manipulate the data:
+1)select genes with no TXN change between 0 and 4h.
+2)Calculate dPAL between 0 and 1h.
+3)Box plot or histdot.
+
+```{r}
+sample=all%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_1and2"=PRO_2-PRO_1)%>%mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  #mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  mutate("dCPS_0and4"=CPS_4-CPS_0)
+  mutate("dTED_0and4"=TED_4-TED_0)%>%select(id,starts_with("d"))%>%
+  #mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5),"Txn:NC","Txn"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.2)&abs(dPRO_1and2)<(0.2)&abs(dPRO_2and4)<(0.2),"Txn:NC","Txn"))%>%
+  select(-dPRO_0and1,-dPRO_1and2,-dPRO_2and4)%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<(-10),"DN",ifelse(dTED_0and4>10,"UP","NC")))%>%
+  group_by(dPRO_group)%>%sample_n(900)%>%
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+  filter(dPRO_group=="Txn:NC")
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.25),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.75),"UP","NS")))%>%ungroup()%>%
+ # group_by(dTED_group,dCPS_group)%>%
+#  sample_n(25)%>%ungroup()%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NS","UP")))
+
+```
+5. Draw plot
+
+```{R}
+col = yk.col(10)[c(3,5,7)] 
+
+pdf("Fig4F_2_0hand1h_Txn:NC_dPAL_BOXPLOT.pdf",width=3,height=2.5)
+ggplot(sample,aes(y=dTED_0and4,x=dPRO_group))+ geom_quasirandom(method = "smiley",aes(col=dTED_group),size=0.5)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"PAL (nt)"))+xlab("0h vs 4h")+ggtitle( expression("Genes with no "*italic(Delta)*"Txn"))+ylim(c(-50,50))+labs(col=expression(italic(Delta)*"PAL"))
+#+geom_boxplot(alpha=0.1, color="black", width=.3)
+dev.off()
+```
+
+
+```{R}
+
+sample=all%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_1and2"=PRO_2-PRO_1)%>%mutate("dPRO_2and4"=PRO_4-PRO_2)%>%
+  mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_1and2)<(0.5)&abs(dPRO_2and4)<(0.5),"Txn:NC","Txn"))%>%
+  select(-dPRO_0and1,-dPRO_1and2,-dPRO_2and4)%>%
+  group_by(dPRO_group)%>%sample_n(900)%>%
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+  filter(dPRO_group=="Txn:NC")
+  #mutate("dCPS_group"=ifelse(dCPS_value<quantile(dCPS_value,0.25),"DN",ifelse(dCPS_value>quantile(dCPS_value,0.75),"UP","NS")))%>%ungroup()%>%
+ # group_by(dTED_group,dCPS_group)%>%
+#  sample_n(25)%>%ungroup()%>%mutate(dCPS_group=factor(dCPS_group,levels=c("DN","NS","UP")))
+
+pdf("FigS4F_2_0hand4h_Txn:NC_dPAL_BOXPLOT.pdf",width=3,height=2.5)
+ggplot(sample,aes(y=dPRO_0and4,x=dPRO_group))+ geom_quasirandom(method = "smiley",aes(col=dPRO_group),size=0.5)+scale_colour_manual(values=col )+theme_bw()+ylab(expression(italic(Delta)*"Transcription"))+xlab("0h vs 4h")+ggtitle( expression("Genes with no "*italic(Delta)*"Txn"))+ylim(c(-2,2))+labs(col=expression(italic(Delta)*"PAL"))+geom_boxplot(alpha=0.1, color="black", width=.3)
+dev.off()
+```
+
+Draw CDF plot to see dPAL and dRNA in no TXN change.
+4. Data manipulation
+
+```{R}
+sample=all%>%mutate("dPRO_0and1"=PRO_1-PRO_0)%>%mutate("dPRO_0and2"=PRO_2-PRO_0)%>%mutate("dPRO_0and4"=PRO_4-PRO_0)%>%
+  #mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%
+  mutate("dCPS_0and4"=CPS_4-CPS_0)%>%
+  mutate("dTED_0and4"=TED_4-TED_0)%>%select(id,starts_with("d"))%>%
+  #mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.3),"Txn:NC","Txn"))%>%
+  mutate("dPRO_group"=ifelse(abs(dPRO_0and1)<(0.5)&abs(dPRO_0and2)<(0.5)&abs(dPRO_0and4)<(0.5),"Txn:NC","Txn"))%>%
+  
+  select(-dPRO_0and1,-dPRO_0and2,-dPRO_0and4)%>%
+    filter(dPRO_group=="Txn:NC")%>%
+  mutate("dTED_group"=ifelse(dTED_0and4<(-10),"DN",ifelse(dTED_0and4>10,"UP","NC")))%>%
+  group_by(dTED_group)#%>%sample_n(60)
+  #gather("dCPS_diff","dCPS_value",-id,-dTED_1and2,-dTED_group,-dPRO_group)%>%
+
+
+
+
+```
+
+5.set CDF color
+```{r}
+col = yk.col(9)[c(2,5,8)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-3,3) +
+  ylab("Cumulative fraction")
+```
+
+```{R}
+
+pdf("Fig4_CDF.pdf",width=4,height=3)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = dCPS_0and4,
+                col = dTED_group,
+            geom = "step")) +
+ labs( title =expression("Transcripts with "*" PAL decrease "*("1h"%->%"2h"))) +
+  xlab(expression(italic(Delta)*"RNA abundance"))+labs(col=expression(italic(Delta)*"PAL"))+
+  ggtitle( expression("Genes with no "*italic(Delta)*"Txn"))+
+  scale_color_manual(values=col)
+dev.off()
+
+
+
+
+
+````

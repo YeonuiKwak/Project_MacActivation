@@ -1,0 +1,72 @@
+---
+title: "Custom_Genomebrowser"
+author: "Yeonui+Kwak"
+date: "1/25/2020"
+output: html_document
+---
+
+```{R}
+source("rscript/browser.R")
+library(RColorBrewer)
+library(dplyr)
+library(tidyr)
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+
+# Set up gene list
+browser.setup(genelist="bed/gencode.v26.uniq.bed") # Set up gene list
+sample = read.table("bedgraph/readcounts.txt", col.names = c("sample", "rc"))
+# Track heights
+heights = c(rep(1, 4))
+# Horizontal line positions
+hlines = 1:4
+# Track label descriptions
+description = c("4 hr", "2 hr","1 hr", "0 hr")
+# Track label positions
+label.y = 0:3 + 0.5
+# Track filename lists
+bglist.all = paste0("bedgraph/",
+		sample$sample,
+		".bedgraph")
+# Select PRO-seq data
+bglist = bglist.all[5:8]
+color = rep(yk.col(11)[2], 4)
+browser.setup(bedgraph = bglist,col = color, heights = heights, hlines = hlines,
+	      label.y = label.y, description = description)
+tc = sample$rc[5:8]
+ymax = tc * 400
+#browser.setgene("TNF")
+browser.setpos("chr6", 31575000, 31580000)
+browser.read()
+ymax = browser.print(filename="pdf/FigS2A1.pdf", nbin=50, width=2.5, height = 3, ymax=ymax)
+
+# Select TED-seq data
+bglist = bglist.all[9:12]
+color = rep(yk.col(11)[5], 4)
+browser.setup(bedgraph = bglist,col = color, heights = heights, hlines = hlines,
+	      label.y = label.y, description = description)
+tc = sample$rc[9:12]
+ymax = c(187.95, 4916.10, 22816.50, 16642.50)*1.2 
+browser.setpos("chr6", 31578036, 31578436)
+browser.read()
+ymax = browser.print(filename="pdf/FigS2A2.pdf", nbin=50, width=2, height = 3, ymax=ymax)
+
+# Select CPS-seq data
+bglist = bglist.all[1:4]
+color = rep(yk.col(11)[11], 4)
+browser.setup(bedgraph = bglist,col = color, heights = heights, hlines = hlines,
+	      label.y = label.y, description = description)
+tc = sample$rc[1:4]
+browser.setpos("chr6", 31578331, 31578341)
+browser.read()
+ymax = tc * 4000
+ymax = browser.print(filename="pdf/FigS2A3.pdf", nbin=10, width=1.5, height = 3, ymax=ymax)
+
+
+```
