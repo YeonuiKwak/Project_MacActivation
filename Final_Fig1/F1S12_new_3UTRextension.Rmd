@@ -1,0 +1,474 @@
+---
+title: "F1S12: Extract 3UTR1kbextensionregion from bed12 file."
+author: "Yeonui+Kwak"
+date: "6/11/2020"
+output: html_document
+---
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig1/Tmp12")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+library(gridExtra)
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(5)[c(1,2,4,5)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(0.3, 0.9) +
+  ylab("Cumulative fraction")
+
+```
+
+
+1) Extend last exon by 1 kb
+2)Extract 3'UTR region
+3)Separate rows.
+```{R}
+ref<-read.table("transcripts.bed13",header=F,stringsAsFactors = F)
+ref%>%filter(V4=="ENST00000472354.1")
+```
+```{R}
+Exmp=ref%>%filter(V6=="+")%>%filter(V7!=V8)
+Exmp
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,8])
+  Txnstart=as.numeric(Exmp[i,2])
+  Txnend=as.numeric(Exmp[i,3])
+  Exoncounts=as.numeric(Exmp[i,10])
+  #1KB extension
+  Txnend=Txnend+1000
+  blocksizes[Exoncounts]=blocksizes[Exoncounts]+1000
+  #Extract 3UTR region
+  count=1
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+    #blocksizes[length(blockstarts)]=Newend-(Txnstart+(blockstarts[length(blockstarts)]))
+    #Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  }
+  count=count-1 #stopcodon containing exon.
+  exonend=Txnstart+blockstarts[count]+blocksizes[count]
+  blockstarts[count]=stopcodon-Txnstart
+  blocksizes[count]=exonend-stopcodon
+  #leave 3'UTR regions only
+  blockstarts=blockstarts[count:Exoncounts]
+  blocksizes=blocksizes[count:Exoncounts]
+  Exoncounts=Exoncounts-(count-1)
+  Txnstart=blockstarts[1]+Txnstart
+  blockstarts=blockstarts-blockstarts[1]
+  #Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  #Exmp[i,12]=str_replace_all(paste(blockstarts, ",",collapse =""), fixed(" "), "")
+  Exmp[i,14]=str_replace_all(paste(paste(blocksizes,blockstarts,sep=":"),",",collapse =""), fixed(" "), "")
+  Exmp[i,10]=Exoncounts
+  Exmp[i,2]=Txnstart
+  Exmp[i,8]=Exmp[i,2]
+  Exmp[i,7]=Exmp[i,2]
+  Exmp[i,3]=Txnstart+blockstarts[Exoncounts]+blocksizes[Exoncounts]
+  }
+pl=Exmp%>%
+  #filter(V13=="RPL13")%>%
+  select(V1,V2,V4,V5,V6,V10,V13,V14)%>%
+  separate_rows(V14,sep=",")%>%
+  filter(V14!="")%>%separate(V14,c("V11","V12"),sep=":")%>%mutate_at(vars(V2,V11,V12,V10),.funs=as.numeric)%>%mutate(V2=V2+V12)%>%mutate(V3=V2+V11)%>%select(-V11,-V12)%>%select(V1,V2,V3,V4,V5,V6,V10,V13)%>% drop_na()
+
+
+
+```
+
+```{R}
+#select mRNA
+Exmp=ref%>%filter(V6=="-")%>%filter(V7!=V8)
+#before=Exmp%>%filter(V4=="ENST00000417652.5")
+#Exmp%>%filter(V4=="ENST00000417652.5")
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,7])
+  Txnstart=as.numeric(Exmp[i,2])
+  Exoncounts=as.numeric(Exmp[i,10])
+  #1KB extension
+  Txnstart=Txnstart-1000
+  blockstarts=blockstarts+1000
+  blockstarts[1]=0
+  blocksizes[1]=blocksizes[1]+1000
+  #Extract 3UTR region
+  count=1
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+  }
+  count=count-1
+  exonstart=Txnstart+blockstarts[count]
+  blocksizes[count]=stopcodon-exonstart
+  #leave 3'UTR regions only
+  blockstarts=blockstarts[1:count]
+  blocksizes=blocksizes[1:count]
+  Exoncounts=count
+  #Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  #Exmp[i,12]=str_replace_all(paste(blockstarts, ",",collapse =""), fixed(" "), "")
+  Exmp[i,14]=str_replace_all(paste(paste(blocksizes,blockstarts,sep=":"),",",collapse =""), fixed(" "), "")
+  Exmp[i,10]=Exoncounts
+  Exmp[i,2]=Txnstart
+  Exmp[i,3]=Txnstart+blockstarts[Exoncounts]+blocksizes[Exoncounts]
+  Exmp[i,8]=Exmp[i,3]
+  Exmp[i,7]=Exmp[i,3]
+}
+
+#3. Separate rows
+mn=Exmp%>%select(V1,V2,V4,V5,V6,V10,V13,V14)%>%
+  separate_rows(V14,sep=",")%>%
+  filter(V14!="")%>%separate(V14,c("V11","V12"),sep=":")%>%mutate_at(vars(V2,V11,V12,V10),.funs=as.numeric)%>%mutate(V2=V2+V12)%>%mutate(V3=V2+V11)%>%select(-V11,-V12)%>%select(V1,V2,V3,V4,V5,V6,V10,V13)%>% drop_na()
+
+
+UTR.1kb.bed=bind_rows(pl,mn)%>%arrange(V1,V2,V3)%>%drop_na()
+UTR.1kb.bed%>%filter(V4=="ENST00000454824.5")
+write.table(UTR.1kb.bed,"3UTR.1kb.extension.bed6",quote=F,col.names = F,row.names = F,sep="\t")
+```
+
+Normalize 3p-seq positions file to total readcounts (1 million)
+
+1. Load each temporal CPS.bed files and normalize the total readcounts to 1 million
+These normalized files will be used to merge CPS peaks within 10 nucleotide windows.
+```{R}
+cps.0h=read.table("cps.0h.withoutinternalpA.bed", stringsAsFactors = F, header=F)
+cps.1h=read.table("cps.1h.withoutinternalpA.bed", stringsAsFactors = F, header=F)
+cps.2h=read.table("cps.2h.withoutinternalpA.bed", stringsAsFactors = F, header=F)
+cps.4h=read.table("cps.4h.withoutinternalpA.bed", stringsAsFactors = F, header=F)
+head(cps.0h)
+l=list(cps.0h,cps.1h,cps.2h,cps.4h)
+lapply(1:4,function(i) sum(l[[i]]$V5))
+cps.all2=cps.0h%>%mutate(V5=V5/sum(cps.0h$V5)*1000000)
+write.table(cps.all2,"cps.0h.withoutinternalpA.1million.bed",quote=F,col.names = F,row.names = F)
+cps.all2=cps.1h%>%mutate(V5=V5/sum(cps.1h$V5)*1000000)
+write.table(cps.all2,"cps.1h.withoutinternalpA.1million.bed",quote=F,col.names = F,row.names = F)
+cps.all2=cps.2h%>%mutate(V5=V5/sum(cps.2h$V5)*1000000)
+write.table(cps.all2,"cps.2h.withoutinternalpA.1million.bed",quote=F,col.names = F,row.names = F)
+cps.all2=cps.4h%>%mutate(V5=V5/sum(cps.4h$V5)*1000000)
+write.table(cps.all2,"cps.4h.withoutinternalpA.1million.bed",quote=F,col.names = F,row.names = F)
+```
+
+
+3.1 Load CPS.all bed file gerenated from normalize temporal cps.bed files,and filter out the positions with readcounts less than 5.
+```{R}
+cps.all=read.table("cps.all.internalpARemoved.1million.bed", stringsAsFactors = F, header=F)
+cat("toal cps positions",nrow(cps.all))
+cps.all3=cps.all%>%filter(V5>=5)
+cat("toal cps positions with threshold 5",nrow(cps.all3))
+sum(cps.all$V5)
+write.table(cps.all3,"cps.all.internalpARemoved.1million.rc.gt5.bed",quote=F,col.names = F,row.names = F,sep="\t")
+```
+
+
+Filter CPS in 3UTR
+
+```{r}
+#cps in ref region (+/-300 nucleotides))
+cps.ref<-read.table("cpsin3UTR1kb.bed7", stringsAsFactors = F, header=F)
+
+cps.ref=cps.ref%>%rename("id"=V4)%>%rename("CPSid"=V7)
+
+#add gene name;Reference position.
+ref<-read.table("transcripts.bed13",header = F,stringsAsFactors = F)
+ref=ref%>%rename("id"=V4)%>%rename("hgnc"=V13)%>%
+  mutate(V2=as.numeric(V2))%>%
+  mutate(V3=as.numeric(V3))%>%
+  mutate("refpos"=ifelse(V6=="+",V3-1,V2))%>%select("id","hgnc","refpos")
+
+#
+cps.ref=cps.ref%>%inner_join(ref,by="id")
+cps.ref%>%filter(id=="ENST00000454824.5")
+cps.ref%>%summarise(n_distinct(hgnc))
+cps.ref%>%summarise(n_distinct(id))
+head(cps.ref)
+cps.ref=cps.ref%>%rename(cpsNo=CPSid)%>%unite("CPSid",c(V1,V2),sep=":",remove = F)#%>%summarise(n_distinct(CPSid))
+head(cps.ref)
+#cps.ref=cps.ref%>%rename(refpos=refpos.y)%>%select(-refpos.x)
+cps.ref=cps.ref%>%select(-V3)
+cps.ref=cps.ref%>%mutate(relpos=V2-refpos)%>%mutate(relpos=ifelse(V6=="+",relpos,-relpos))
+
+colnames(cps.ref)=c("CPSid","chr","CPSpos","id","readcount","strand","cpsNo","hgnc","refpos","relpos")
+RATIO=cps.ref%>%ungroup()%>%arrange(hgnc,CPSid,abs(relpos))%>%
+  distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%
+  group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))
+cps.ref=cps.ref%>%
+  ungroup()%>%inner_join(RATIO%>%ungroup()%>%select(CPSid,ratio),by="CPSid")
+
+cps.ref=cps.ref%>%rename(cps.ratio.perhgnc=ratio)
+cps.ref%>%ungroup()%>%summarise(n_distinct(CPSid))
+#for 1kb extension
+
+write.table(cps.ref,"final.30649cps.in.3UTR.1kb.ext.txt",col.names = T,row.names = F,sep="\t",quote=F)
+```
+
+Out of 52597 CPSs
+After removal internal priming:
+35318 CPSs.
+-26000 CPSs in 3UTR+1kb.
+#Statistics.
+```{R}
+
+cps.all.stat=cps.all3%>%mutate("location"=ifelse(V4 %in% cps.ref$CPSid,"3´UTR+1kb","Elsewhere"))%>%group_by(location)%>%summarise("count"=n())
+cps.all.stat
+30654/(30654+17332) #61%
+pdf("Genomic locations of the poly(A) sites_AfterRemovinginternalpA_version2.pdf",width=3,height=3)
+ggplot(cps.all.stat,aes(x=location,y=count))+geom_bar(stat="identity")+theme_bw()+xlab("Genomic location")+ylab("Number of poly(A) sites")
+dev.off()
+
+cat("Number of hgnc that have CPSs in their 3' UTR 1kb extension :", 10367)
+head(cps.all3)
+cps.all3%>%rename(CPSid=V4)%>%
+  inner_join(cps.ref%>%select(CPSid,hgnc),by="CPSid")%>%
+  mutate("location"=ifelse(CPSid %in% cps.ref$CPSid,"3´UTR+1kb","Elsewhere"))%>%filter(location=="3´UTR+1kb")%>%summarise(n_distinct(hgnc))
+cps.ref%>%filter(hgnc=="NCL")
+```
+
+```{R}
+
+cat("Number of all annotated PAS sites",32483)
+cps.ref%>%summarise(n_distinct(CPSid))
+cps.ref%>%ungroup()%>%arrange(hgnc,id,refpos)%>%
+  distinct_at(vars(hgnc,refpos),.keep_all = T)%>%nrow()
+```
+
+
+3. ReadcountData.
+```{R}
+#mine
+cps1<-read.table("cps.rc.0h.r1.txt", stringsAsFactors = F, header=F)
+cps2<-read.table("cps.rc.0h.r2.txt", stringsAsFactors = F, header=F)
+cps3<-read.table("cps.rc.1h.r1.txt", stringsAsFactors = F, header=F)
+cps4<-read.table("cps.rc.1h.r2.txt", stringsAsFactors = F, header=F)
+cps5<-read.table("cps.rc.2h.r1.txt", stringsAsFactors = F, header=F)
+cps6<-read.table("cps.rc.2h.r2.txt", stringsAsFactors = F, header=F)
+cps7<-read.table("cps.rc.4h.r1.txt", stringsAsFactors = F, header=F)
+cps8<-read.table("cps.rc.4h.r2.txt", stringsAsFactors = F, header=F)
+
+cps1=cps1%>%select(V4,V7)
+cps2=cps2%>%select(V4,V7)
+cps3=cps3%>%select(V4,V7)
+cps4=cps4%>%select(V4,V7)
+cps5=cps5%>%select(V4,V7)
+cps6=cps6%>%select(V4,V7)
+cps7=cps7%>%select(V4,V7)
+cps8=cps8%>%select(V4,V7)
+cps.all.full.window=read.table("cps.all.full.window.bed", stringsAsFactors = F, header=F)
+cps.all.full.window=cps.all.full.window%>%select(V4)
+head(cps.all.full.window)
+l=list(cps.all.full.window,cps1,cps2,cps3,cps4,cps5,cps6,cps7,cps8)
+cps=l%>%reduce(left_join,by="V4")
+str(cps)
+colnames(cps)=c("CPSid","X0h.r1","X0h.r2","X1h.r1","X1h.r2","X2h.r1","X2h.r2","X4h.r1","X4h.r2")
+cps=cps%>% replace(is.na(.), 0)
+nrow(cps)
+cps=(cps)%>%select(-X0h.r2)
+write.table(cps,"all.cps.positions.readcount.txt",col.names=T,quote=F)
+
+#CPM normalization
+cps[,2:8]=sweep((cps[,2:8]), 2,colSums(cps[,2:8]) , "/")
+cps[,2:8]=cps[,2:8]*1000000
+colSums(cps[2:8])
+#cps=cps%>%filter_at(vars(contains("h.r")),all_vars(.>=1))
+nrow(cps)
+#in the ref regions
+
+cps=cps.ref%>%inner_join(cps,by="CPSid")
+cps%>%filter(hgnc=="TNF")
+cps%>%ungroup()%>%summarise(n_distinct(CPSid))
+cps%>%ungroup()%>%summarise(n_distinct(id))
+cps%>%ungroup()%>%summarise(n_distinct(hgnc))
+
+```
+4. Manipulate Data
+4.1
+```{R}
+cps=cps%>%select(-chr,-readcount)
+head(cps)
+cps=cps %>%gather("sample","readcount",-CPSid,-CPSpos,-id,-strand,-cpsNo,-hgnc,-refpos,-strand,-cps.ratio.perhgnc,-relpos)%>%
+  separate(sample,c("time","rep"),sep="h\\.r")%>%
+  mutate(time=as.numeric(substring(time,2)))
+cps%>%summarise(n_distinct(id))
+cps%>%summarise(n_distinct(hgnc))
+head(cps)
+cps%>%filter(hgnc=="TNF")
+write.table(cps,"cpspeak.readcount.table.2020.06.11.3UTR1KB.ext.txt",col.names = T,quote=F,row.names = F, sep="\t")
+```
+
+```{R}
+cps=read.table("cpspeak.readcount.table.2020.06.11.3UTR1KB.ext.txt",header=T,stringsAsFactors = F)
+tmp=cps%>%select(-CPSpos,-strand,-cps.ratio.perhgnc,-refpos)%>%group_by(CPSid,id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(hgnc,time,CPSid,(abs(relpos)),id)%>%
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(hgnc,id, time)%>%
+   mutate(ratio=(mean.rc+1)/sum(mean.rc+1))%>%
+  ungroup()%>%select(hgnc,CPSid,time,relpos,id,ratio)
+```
+relative positions of de novo PAS sites across all samples
+```{R}
+
+yk.cols=yk.col(5)[c(1,2,4,5)]
+pdf("S1H2_allCPS.pdf",,width=4,height=3)
+ggplot(tmp%>%distinct_at(vars(hgnc,CPSid,id),.keep_all = T),aes(relpos,fill=yk.cols[1]))+geom_histogram(binwidth = 5)+
+  theme_bw()+
+  #facet_wrap(.~time,ncol=2)+
+  scale_colour_manual(values = yk.cols)+
+  scale_fill_manual(values = yk.cols)+theme_bw()+
+  xlab("Relative position from the reference PAS")+ylab("Number of de novo poly(A) sites")+
+  xlim(c(-1000,1000))+
+  ggtitle("")+
+  theme(legend.position = "none")
+dev.off()
+
+pdf("FigS1F_relCPSpos_1KB3UTRRefregion.pdf",width=4,height = 4)
+ggplot(tmp,aes(relpos,fill=as.factor(time)))+
+  geom_histogram(binwidth = 5)+
+  facet_wrap(.~time,ncol=2)+
+  xlim(c(-1000,1000))+
+  scale_colour_manual(values = yk.cols)+
+  scale_fill_manual(values = yk.cols)+
+  theme_bw()+theme(legend.position = "none")+
+  xlab("Relative position from the reference PAS")+ylab("Number of de novo PASs")
+dev.off()
+
+
+```
+
+
+
+
+Number of genes with discrepance between actual and ref PASs.
+```{R}
+cps.ref#<-read.table("final.2cps.in.3UTR.1kb.ext.txt",header=T,stringsAsFactors = F)
+#tandem UTRs is equal to transcripts with stopcodon in common
+ref<-read.table("transcripts.bed13",header = F,stringsAsFactors = F)
+```
+
+#stopcodon position is not good due to tandem stopcodon.
+Define ALE position by the start site of Exon containing stopcodon.
+```{R}
+Exmp=ref%>%filter(V6=="+")%>%
+  #filter(V7!=V8)%>%
+  mutate(ALEpos=NA)
+Exmp
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,8])
+  Txnstart=as.numeric(Exmp[i,2])
+  Exoncounts=as.numeric(Exmp[i,10])
+  count=1
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+    #blocksizes[length(blockstarts)]=Newend-(Txnstart+(blockstarts[length(blockstarts)]))
+    #Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  }
+  count=count-1
+  Exmp[i,14]=Txnstart+blockstarts[count]
+  }
+
+pl=Exmp
+Exmp=ref%>%filter(V6=="-")%>%
+  #filter(V7!=V8)%>%
+  mutate(ALEpos=NA)
+Exmp
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,7])
+  Txnstart=as.numeric(Exmp[i,2])
+  Exoncounts=as.numeric(Exmp[i,10])
+  count=1
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+  }
+  count=count-1
+  Exmp[i,14]=Txnstart+blockstarts[count]+blocksizes[count]
+  }
+head(Exmp)
+mn=Exmp
+ALEpos=bind_rows(pl,mn)%>%arrange(V1,V2,V3)%>%mutate(ALEpos=as.numeric(ALEpos))
+ALEpos%>%filter(V13=="UBE2J2")
+write.table(ALEpos%>%select(V4,ALEpos)%>%rename(id=V4),"ALEposannotation_withNCRNA.txt",col.names = T,row.names = F,quote=F,sep="\t")
+
+
+```
+
+
+
+
+
+```{R}
+alepos<-read.table("ALEposannotation_withNCRNA.txt",header=T,stringsAsFactors = F)
+head(cps.ref)
+cps.ref2=cps.ref%>%inner_join(alepos,by="id")
+ALEindex=cps.ref2%>%group_by(hgnc)%>% arrange(hgnc,ALEpos)%>%distinct_at(vars(ALEpos),.keep_all =T)%>%
+  mutate(ALE=ifelse(strand=="+",rank(ALEpos),rank(-ALEpos)))%>%select(hgnc,ALEpos,ALE)%>%unite("newid",c(hgnc,ALEpos),sep=":")
+cps.ref2=cps.ref2%>%unite("newid",c(hgnc,ALEpos),sep=":")%>%inner_join(ALEindex,by="newid")%>%separate(newid,c("hgnc","ALEpos"),sep=":")
+
+cps.collapsed=cps.ref2%>%ungroup()%>%arrange(hgnc,CPSid,relpos,ALE,id)%>%distinct_at(vars(hgnc,CPSid,relpos),.keep_all = T)
+head(cps.collapsed)
+cps.collapsed%>%ungroup()%>%summarise(n_distinct(CPSid)) #23036 (CODING RNA) #25997 (Coding +Noncoding RNA)
+cps.collapsed%>%ungroup()%>%arrange(hgnc,id,refpos)%>%
+  distinct_at(vars(hgnc,refpos),.keep_all = T)%>%nrow()
+
+cps.collapsed%>%filter(abs(relpos)<10)%>%summarise(n_distinct(CPSid)) #9819(CODING) /9199 (ALL)
+id1=cps.collapsed%>%filter(abs(relpos)<10)%>%select(CPSid)%>%arrange(CPSid)%>%distinct()%>%unlist()
+cps.collapsed%>%filter(!(CPSid %in% id1))%>%filter(abs(relpos)<300&abs(relpos)>=10)%>%summarise(n_distinct(CPSid)) #8259/7818
+id2=cps.collapsed%>%filter(!(CPSid %in% id))%>%filter(abs(relpos)<300&abs(relpos)>=10)%>%select(CPSid)%>%arrange(CPSid)%>%distinct()%>%unlist()
+cps.collapsed%>%filter(!(CPSid %in% c(id1,id2)))%>%filter(abs(relpos)>=300)%>%summarise(n_distinct(CPSid)) #15257/  8980
+cps.collapsed%>%ungroup()%>%summarise(n_distinct(CPSid))
+stat=data.frame("Location"=c("within 10 nt","b/w 10 nt and 300 nt", "beyond 300 nt"),"PAS sites"=c(9966,9890,10793))%>%mutate(`Location`=factor(Location,levels =c("within 10 nt","b/w 10 nt and 300 nt", "beyond 300 nt")))
+pdf("Stat_PAS_VERSION2.pdf",width = 4,height = 3)
+ggplot(stat,aes(x=Location,y=PAS.sites,fill=Location))+geom_bar(stat="identity")+scale_fill_manual(name="Poly(A) tail length",values=yk.col(5)[c(2,3,4)])+theme_bw()+ylab("Number of PAS sites")+xlab("Position relative to \n the UCSC PAS sites")+theme(axis.text.x = element_blank())+ylim(c(0,11000))
+dev.off()
+
+```
+
+```{R}
+
+tmp=cps%>%select(-CPSpos,-strand,-cps.ratio.perhgnc,-refpos)%>%group_by(CPSid,id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(hgnc, time)%>%
+   mutate(ratio=(mean.rc+1)/sum(mean.rc+1))%>%
+  #filter(ratio>=0.70)%>%
+  ungroup()%>%select(hgnc,CPSid,time,relpos)%>%
+  spread(time,relpos)%>% 
+  filter_all(all_vars(!is.na(.)))%>%ungroup()%>%group_by(hgnc)%>%summarise(t=n_distinct(CPSid))%>%group_by(t)%>%summarise(n())
+tmp
+
+```
+Number of genes with different numbers of tandem poly(A) sites.
+```{R}
+tmp=cps.ref%>%group_by(hgnc)%>%summarise(t=n_distinct(CPSid))%>%group_by(t)%>%summarise(n())
+tmp=tmp%>%mutate(count=ifelse(t<=15,t,">15"))%>%group_by(count)%>%summarise(sum=sum(`n()`))%>%mutate(count=factor(count,levels=c(1:15,">15")))
+write.table(tmp,"summaryoftallyof genes withCPSNo_version2.txt",sep="\t",quote=F,row.names = F,col.names = T)
+pdf("Number of genes with different numbers of poly(A) sites_Version2.pdf",width=4,height=3)
+ggplot(tmp,aes(x=count,y=sum))+geom_bar(stat = "identity")+ylab("Number of genes")+xlab("3´CPS counts")+
+  theme_bw()
+dev.off()
+
+```

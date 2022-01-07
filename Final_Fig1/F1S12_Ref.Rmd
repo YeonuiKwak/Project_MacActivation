@@ -1,0 +1,1549 @@
+---
+title: "F1S12_7:Using a new CPSreadCount.txt"
+author: "Yeonui+Kwak"
+date: "4/9/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig1/Tmp12")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+
+2. Load the required libraries.
+```{R}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gridExtra)
+#source("scatterPlot.R")
+```
+```{R}
+#if(!require(coin)){install.packages("coin")}
+#if(!require(rcompanion)){install.packages("rcompanion")}
+library(coin);library(rcompanion)
+pears.cor=function(table, rscore, cscore)
+{ 
+	dim=dim(table) 
+	rbar=sum(margin.table(table,1)*rscore)/sum(table) 
+	rdif=rscore-rbar 
+	cbar=sum(margin.table(table,2)*cscore)/sum(table) 
+	cdif=cscore-cbar 
+	ssr=sum(margin.table(table,1)*(rdif^2)) 
+	ssc=sum(margin.table(table,2)*(cdif^2)) 
+	ssrc=sum(t(table*rdif)*cdif) 
+	pcor=ssrc/(sqrt(ssr*ssc)) 
+	pcor 
+	M2=(sum(table)-1)*pcor^2
+	M2
+	result=c(pcor, M2)
+	result
+	} 
+
+```
+
+```{R}
+# Function to apply chisq.test() to tibble groups
+diffCPS.test = function(tm, cn, rc) {
+	cont.t = data.frame(time = tm, cpsNo = cn, readCount = rc) %>%
+		spread(time, readCount)
+	return(chisq.test(cont.t[, -1])$p.value)}
+
+TSI.test=function(cps,tm,rc){
+  cont.t=data.frame(CPS=cps,Time=tm,Readcounts=rc)%>%
+    spread(CPS,Readcounts)
+mat=as.matrix(cont.t[c(1:4),-1])
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "utrlen"=as.character(c(colnames(mat)))
+))
+#t=prop.table(t,margin=1)*100
+t=as.table(round(t,0))
+lt <- lbl_test(t, scores = list("utrlen"=1:ncol(t),"time"=1:nrow(t)))
+  return(lt@statistic@teststatistic)
+}
+
+
+TSI.cor.test=function(cps,tm,rc){
+  cont.t=data.frame(CPS=cps,Time=tm,Readcounts=rc)%>%
+    spread(CPS,Readcounts)
+mat=as.matrix(cont.t[,-1])
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "utrlen"=as.character(c(colnames(mat)))
+))
+#t=prop.table(t,margin=1)*100
+t=as.table(round(t,0))
+x=pears.cor(t,cscore=1:ncol(t),rscore=1:nrow(t))
+#lt <- lbl_test(t, scores = list("utrlen"=1:ncol(t),"time"=1:nrow(t)))
+  return(x[1])
+}
+
+
+TSI.M2.test=function(cps,tm,rc){
+  cont.t=data.frame(CPS=cps,Time=tm,Readcounts=rc)%>%
+    spread(CPS,Readcounts)
+mat=as.matrix(cont.t[,-1])
+
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "utrlen"=as.character(c(colnames(mat)))
+))
+#t=prop.table(t,margin=1)*100
+t=as.table(round(t,0))
+x=pears.cor(t,cscore=1:ncol(t),rscore=1:nrow(t))
+#lt <- lbl_test(t, scores = list("utrlen"=1:ncol(t),"time"=1:nrow(t)))
+  return(x[2])
+}
+```
+
+3.0 Load each temporal CPS.bed files and normalize the total readcounts to 1 million
+These normalized files will be used to merge CPS peaks within 10 nucleotide windows.
+```{R}
+cps.0h=read.table("0h.all.bed6", stringsAsFactors = F, header=F)
+cps.1h=read.table("1h.all.bed6", stringsAsFactors = F, header=F)
+cps.2h=read.table("2h.all.bed6", stringsAsFactors = F, header=F)
+cps.4h=read.table("4h.all.bed6", stringsAsFactors = F, header=F)
+l=list(cps.0h,cps.1h,cps.2h,cps.4h)
+lapply(1:4,function(i) sum(l[[i]]$V5))
+cps.all2=cps.0h%>%mutate(V5=V5/sum(cps.0h$V5)*1000000)
+write.table(cps.all2,"cps.0h.bed",quote=F,col.names = F,row.names = F)
+cps.all2=cps.1h%>%mutate(V5=V5/sum(cps.1h$V5)*1000000)
+write.table(cps.all2,"cps.1h.bed",quote=F,col.names = F,row.names = F)
+cps.all2=cps.2h%>%mutate(V5=V5/sum(cps.2h$V5)*1000000)
+write.table(cps.all2,"cps.2h.bed",quote=F,col.names = F,row.names = F)
+cps.all2=cps.4h%>%mutate(V5=V5/sum(cps.4h$V5)*1000000)
+write.table(cps.all2,"cps.4h.bed",quote=F,col.names = F,row.names = F)
+```
+
+3.1 Load CPS.all bed file gerenated from normalize temporal cps.bed files,and filter out the positions with readcounts less than 5.
+```{R}
+cps.all=read.table("cps.all.internalpARemoved.1million.bed", stringsAsFactors = F, header=F)
+cat("toal cps positions",nrow(cps.all))
+cps.all3=cps.all%>%filter(V5>=5)
+cat("toal cps positions with threshold 5",nrow(cps.all3))
+sum(cps.all$V5)
+write.table(cps.all3,"cps.all.internalpARemoved.1million.rc.gt5.bed",quote=F,col.names = F,row.names = F,sep="\t")
+```
+
+
+Filter CPS in 3UTR
+
+```{r}
+#cps in ref region (+/-300 nucleotides))
+cps.ref<-read.table("cpsin3UTR1kb.bed7", stringsAsFactors = F, header=F)
+head(cps.ref)
+cps.ref=cps.ref%>%rename("id"=V4)%>%rename("CPSid"=V7)
+
+#add gene name;Reference position.
+ref<-read.table("transcripts.bed13",header = F,stringsAsFactors = F)
+ref=ref%>%rename("id"=V4)%>%rename("hgnc"=V13)%>%
+  mutate(V2=as.numeric(V2))%>%
+  mutate(V3=as.numeric(V3))%>%
+  mutate("refpos"=ifelse(V6=="+",V3-1,V2))%>%select("id","hgnc","refpos")
+
+#
+cps.ref=cps.ref%>%inner_join(ref,by="id")
+
+cps.ref%>%summarise(n_distinct(hgnc))
+cps.ref%>%summarise(n_distinct(id))
+head(cps.ref)
+cps.ref=cps.ref%>%rename(cpsNo=CPSid)%>%unite("CPSid",c(V1,V2),sep=":",remove = F)#%>%summarise(n_distinct(CPSid))
+head(cps.ref)
+#cps.ref=cps.ref%>%rename(refpos=refpos.y)%>%select(-refpos.x)
+cps.ref=cps.ref%>%select(-V3)
+cps.ref=cps.ref%>%mutate(relpos=V2-refpos)%>%mutate(relpos=ifelse(V6=="+",relpos,-relpos))
+
+colnames(cps.ref)=c("CPSid","chr","CPSpos","id","readcount","strand","cpsNo","hgnc","refpos","relpos")
+RATIO=cps.ref%>%ungroup()%>%arrange(hgnc,CPSid,abs(relpos))%>%
+  distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%
+  group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))
+cps.ref=cps.ref%>%
+  ungroup()%>%inner_join(RATIO%>%ungroup()%>%select(CPSid,ratio),by="CPSid")
+
+cps.ref=cps.ref%>%rename(cps.ratio.perhgnc=ratio)
+cps.ref%>%ungroup()%>%summarise(n_distinct(CPSid))
+#for 1kb extension
+
+write.table(cps.ref,"final.26000cps.in.3UTR.1kb.ext.txt",col.names = T,row.names = F,sep="\t",quote=F)
+```
+
+Number of genes with discrepance between actual and ref PASs.
+```{R}
+cps.ref<-read.table("final.26000cps.in.3UTR.1kb.ext.txt",header=T,stringsAsFactors = F)
+#tandem UTRs is equal to transcripts with stopcodon in common
+ref<-read.table("transcripts.bed13",header = F,stringsAsFactors = F)
+```
+
+#stopcodon position is not good due to tandem stopcodon.
+Define ALE position by the start site of Exon containing stopcodon.
+```{R}
+Exmp=ref%>%filter(V6=="+")%>%
+  #filter(V7!=V8)%>%
+  mutate(ALEpos=NA)
+Exmp
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,8])
+  Txnstart=as.numeric(Exmp[i,2])
+  Exoncounts=as.numeric(Exmp[i,10])
+  count=1
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+    #blocksizes[length(blockstarts)]=Newend-(Txnstart+(blockstarts[length(blockstarts)]))
+    #Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  }
+  count=count-1
+  Exmp[i,14]=Txnstart+blockstarts[count]
+  }
+
+pl=Exmp
+Exmp=ref%>%filter(V6=="-")%>%
+  #filter(V7!=V8)%>%
+  mutate(ALEpos=NA)
+Exmp
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,7])
+  Txnstart=as.numeric(Exmp[i,2])
+  Exoncounts=as.numeric(Exmp[i,10])
+  count=1
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+  }
+  count=count-1
+  Exmp[i,14]=Txnstart+blockstarts[count]+blocksizes[count]
+  }
+head(Exmp)
+mn=Exmp
+ALEpos=bind_rows(pl,mn)%>%arrange(V1,V2,V3)%>%mutate(ALEpos=as.numeric(ALEpos))
+ALEpos%>%filter(V13=="UBE2J2")
+write.table(ALEpos%>%select(V4,ALEpos)%>%rename(id=V4),"ALEposannotation_withNCRNA.txt",col.names = T,row.names = F,quote=F,sep="\t")
+
+
+```
+
+
+
+
+
+```{R}
+alepos<-read.table("ALEposannotation_withNCRNA.txt",header=T,stringsAsFactors = F)
+head(cps.ref)
+cps.ref2=cps.ref%>%inner_join(alepos,by="id")
+ALEindex=cps.ref2%>%group_by(hgnc)%>% arrange(hgnc,ALEpos)%>%distinct_at(vars(ALEpos),.keep_all =T)%>%
+  mutate(ALE=ifelse(strand=="+",rank(ALEpos),rank(-ALEpos)))%>%select(hgnc,ALEpos,ALE)%>%unite("newid",c(hgnc,ALEpos),sep=":")
+cps.ref2=cps.ref2%>%unite("newid",c(hgnc,ALEpos),sep=":")%>%inner_join(ALEindex,by="newid")%>%separate(newid,c("hgnc","ALEpos"),sep=":")
+
+cps.collapsed=cps.ref2%>%ungroup()%>%arrange(hgnc,CPSid,relpos,ALE,id)%>%distinct_at(vars(hgnc,CPSid,relpos),.keep_all = T)
+head(cps.collapsed)
+cps.collapsed%>%ungroup()%>%summarise(n_distinct(CPSid)) #23036 (CODING RNA) #25997 (Coding +Noncoding RNA)
+cps.collapsed%>%ungroup()%>%arrange(hgnc,id,refpos)%>%
+  distinct_at(vars(hgnc,refpos),.keep_all = T)%>%nrow()
+
+cps.collapsed%>%filter(abs(relpos)<10)%>%summarise(n_distinct(CPSid)) #9819(CODING) /9199 (ALL)
+id1=cps.collapsed%>%filter(abs(relpos)<10)%>%select(CPSid)%>%arrange(CPSid)%>%distinct()%>%unlist()
+cps.collapsed%>%filter(!(CPSid %in% id1))%>%filter(abs(relpos)<300&abs(relpos)>=10)%>%summarise(n_distinct(CPSid)) #8259/7818
+id2=cps.collapsed%>%filter(!(CPSid %in% id))%>%filter(abs(relpos)<300&abs(relpos)>=10)%>%select(CPSid)%>%arrange(CPSid)%>%distinct()%>%unlist()
+cps.collapsed%>%filter(!(CPSid %in% c(id1,id2)))%>%filter(abs(relpos)>=300)%>%summarise(n_distinct(CPSid)) #15257/  8980
+
+stat=data.frame("Location"=c("within 10 nt","b/w 10 nt and 300 nt", "beyond 300 nt"),"PAS sites"=c(9199,7818,8980))%>%mutate(`Location`=factor(Location,levels =c("within 10 nt","b/w 10 nt and 300 nt", "beyond 300 nt")))
+pdf("Stat_PAS.pdf",width = 4,height = 3)
+ggplot(stat,aes(x=Location,y=PAS.sites,fill=Location))+geom_bar(stat="identity")+scale_fill_manual(name="Poly(A) tail length",values=yk.col(5)[c(2,3,4)])+theme_bw()+ylab("Number of PAS sites")+xlab("Position relative to \n the UCSC PAS sites")+theme(axis.text.x = element_blank())+ylim(c(0,11000))
+dev.off()
+```
+Out of 52597 CPSs
+After removal internal priming:
+35318 CPSs.
+-26000 CPSs in 3UTR+1kb.
+#Statistics.
+```{R}
+
+cps.all.stat=cps.all3%>%mutate("location"=ifelse(V4 %in% cps.ref$CPSid,"3´UTR+1kb","Elsewhere"))%>%group_by(location)%>%summarise("count"=n())
+cps.all.stat
+26000/(26000+9318)
+pdf("Genomic locations of the poly(A) sites_AfterRemovinginternalpA.pdf",width=3,height=3)
+ggplot(cps.all.stat,aes(x=location,y=count))+geom_bar(stat="identity")+theme_bw()+xlab("Genomic location")+ylab("Number of poly(A) sites")
+dev.off()
+
+cat("Number of hgnc that have CPSs in their 3' UTR 1kb extension :", 10367)
+head(cps.all3)
+cps.all3%>%rename(CPSid=V4)%>%
+  inner_join(cps.ref%>%select(CPSid,hgnc),by="CPSid")%>%
+  mutate("location"=ifelse(CPSid %in% cps.ref$CPSid,"3´UTR+1kb","Elsewhere"))%>%filter(location=="3´UTR+1kb")%>%summarise(n_distinct(hgnc))
+```
+
+```{R}
+
+cat("Number of all annotated PAS sites",35628)
+cps.ref%>%summarise(n_distinct(CPSid))
+cps.ref%>%ungroup()%>%arrange(hgnc,id,refpos)%>%
+  distinct_at(vars(hgnc,refpos),.keep_all = T)%>%nrow()
+9199/35918
+```
+
+
+```{r}
+cps.ref%>%ungroup()%>%arrange(hgnc,CPSid,abs(relpos))%>%
+  distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%
+  group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))%>%
+  filter(hgnc=="UBE2R2")
+
+cps.ref%>%ungroup()%>%arrange(hgnc,CPSid)%>%
+  distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%
+  group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))%>%
+  filter(hgnc=="PDK3")
+
+cat("genes with transcript with PAS different from reference")
+list_=cps.ref%>%ungroup()%>%arrange(hgnc,id)%>%
+   distinct_at(vars(hgnc,id),.keep_all = T)%>%
+  select(hgnc,id)%>%group_by(hgnc)%>%
+    summarise(n_id=n_distinct(id))%>%filter(n_id==1)
+
+
+cps.ref%>%ungroup()%>%filter(hgnc%in% c(list_$hgnc))%>%arrange(hgnc,CPSid)%>%
+  distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%
+  group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))%>%filter(ratio>0.8)%>%
+  filter(abs(relpos)>300)
+  
+cat("genes with genes with unannotated PAS isoform")
+#
+list_=cps.ref%>%ungroup()%>%arrange(hgnc,id)%>%
+   distinct_at(vars(hgnc,id),.keep_all = T)%>%
+  select(hgnc,id)%>%group_by(hgnc)%>%
+    summarise(n_id=n_distinct(id))%>%filter(n_id==1)
+#
+list_2=cps.ref%>%ungroup()%>%arrange(hgnc,id)%>%
+   distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%
+  select(hgnc,CPSid)%>%group_by(hgnc)%>%
+    summarise(n_id=n_distinct(CPSid))%>%filter(n_id==2)
+#
+cps.ref%>%ungroup()%>%filter(hgnc%in% c(list_$hgnc))%>%
+  filter(hgnc%in% c(list_2$hgnc))%>%
+  arrange(hgnc,CPSid)%>%
+  distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%
+  group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))%>%
+  filter(abs(relpos)>300)
+#
+```
+
+3. ReadcountData.
+```{R}
+#mine
+cps1<-read.table("cps.rc.0h.r1.txt", stringsAsFactors = F, header=F)
+cps2<-read.table("cps.rc.0h.r2.txt", stringsAsFactors = F, header=F)
+cps3<-read.table("cps.rc.1h.r1.txt", stringsAsFactors = F, header=F)
+cps4<-read.table("cps.rc.1h.r2.txt", stringsAsFactors = F, header=F)
+cps5<-read.table("cps.rc.2h.r1.txt", stringsAsFactors = F, header=F)
+cps6<-read.table("cps.rc.2h.r2.txt", stringsAsFactors = F, header=F)
+cps7<-read.table("cps.rc.4h.r1.txt", stringsAsFactors = F, header=F)
+cps8<-read.table("cps.rc.4h.r2.txt", stringsAsFactors = F, header=F)
+
+cps1=cps1%>%select(V4,V7)
+cps2=cps2%>%select(V4,V7)
+cps3=cps3%>%select(V4,V7)
+cps4=cps4%>%select(V4,V7)
+cps5=cps5%>%select(V4,V7)
+cps6=cps6%>%select(V4,V7)
+cps7=cps7%>%select(V4,V7)
+cps8=cps8%>%select(V4,V7)
+cps.all.full.window=read.table("cps.all.full.window.bed", stringsAsFactors = F, header=F)
+cps.all.full.window=cps.all.full.window%>%select(V4)
+head(cps.all.full.window)
+l=list(cps.all.full.window,cps1,cps2,cps3,cps4,cps5,cps6,cps7,cps8)
+cps=l%>%reduce(left_join,by="V4")
+str(cps)
+colnames(cps)=c("CPSid","X0h.r1","X0h.r2","X1h.r1","X1h.r2","X2h.r1","X2h.r2","X4h.r1","X4h.r2")
+cps=cps%>% replace(is.na(.), 0)
+nrow(cps)
+cps=(cps)%>%select(-X0h.r2)
+write.table(cps,"all.cps.positions.readcount.txt",col.names=T,quote=F)
+
+#CPM normalization
+cps[,2:8]=sweep((cps[,2:8]), 2,colSums(cps[,2:8]) , "/")
+cps[,2:8]=cps[,2:8]*1000000
+colSums(cps[2:8])
+#cps=cps%>%filter_at(vars(contains("h.r")),all_vars(.>=1))
+nrow(cps)
+#in the ref regions
+
+cps=cps.ref%>%inner_join(cps,by="CPSid")
+cps%>%filter(hgnc=="TNF")
+cps%>%ungroup()%>%summarise(n_distinct(CPSid))
+cps%>%ungroup()%>%summarise(n_distinct(id))
+cps%>%ungroup()%>%summarise(n_distinct(hgnc))
+
+```
+
+4. Manipulate Data
+4.1
+```{R}
+cps=cps%>%select(-chr,-readcount)
+head(cps)
+cps=cps %>%gather("sample","readcount",-CPSid,-CPSpos,-id,-strand,-cpsNo,-hgnc,-refpos,-strand,-cps.ratio.perhgnc,-relpos)%>%
+  separate(sample,c("time","rep"),sep="h\\.r")%>%
+  mutate(time=as.numeric(substring(time,2)))
+cps%>%summarise(n_distinct(id))
+cps%>%summarise(n_distinct(hgnc))
+head(cps)
+cps%>%filter(hgnc=="TNF")
+write.table(cps,"cpspeak.readcount.table.2020.05.20.3UTR1KB.ext.txt",col.names = T,quote=F,row.names = F, sep="\t")
+```
+
+```{R}
+cps=read.table("cpspeak.readcount.table.2020.05.20.3UTR1KB.ext.txt",header=T,stringsAsFactors = F)
+tmp=cps%>%select(-CPSpos,-strand,-cps.ratio.perhgnc,-refpos)%>%group_by(CPSid,id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(hgnc,time,CPSid,(abs(relpos)),id)%>%
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(hgnc,id, time)%>%
+   mutate(ratio=(mean.rc+1)/sum(mean.rc+1))%>%
+  ungroup()%>%select(hgnc,CPSid,time,relpos,id,ratio)
+```
+relative positions of de novo PAS sites across all samples
+```{R}
+
+yk.cols=yk.col(5)[c(1,2,4,5)]
+pdf("S1H2_allCPS.pdf",,width=4,height=3)
+ggplot(tmp%>%distinct_at(vars(hgnc,CPSid,id),.keep_all = T),aes(relpos,fill=yk.cols[1]))+geom_histogram(binwidth = 5)+
+  theme_bw()+
+  #facet_wrap(.~time,ncol=2)+
+  scale_colour_manual(values = yk.cols)+
+  scale_fill_manual(values = yk.cols)+theme_bw()+
+  xlab("Relative position from the reference PAS")+ylab("Number of de novo poly(A) sites")+
+  xlim(c(-1000,1000))+
+  ggtitle("")+
+  theme(legend.position = "none")
+dev.off()
+
+pdf("FigS1F_relCPSpos_1KB3UTRRefregion.pdf",width=4,height = 4)
+ggplot(tmp,aes(relpos,fill=as.factor(time)))+
+  geom_histogram(binwidth = 5)+
+  facet_wrap(.~time,ncol=2)+
+  xlim(c(-1000,1000))+
+  scale_colour_manual(values = yk.cols)+
+  scale_fill_manual(values = yk.cols)+
+  theme_bw()+theme(legend.position = "none")+
+  xlab("Relative position from the reference PAS")+ylab("Number of de novo PASs")
+dev.off()
+
+
+```
+
+
+```{R}
+cat("unique 3'UTR annotation")
+tmp%>%group_by(time)%>%summarise(n_distinct(id)) #16985
+cat("number of genes in the unique 3UTR annotation")
+#gene 10367
+tmp%>%group_by(time)%>%summarise(n_distinct(hgnc))
+
+cat("number of genes with relpos20")
+tmp%>%filter(abs(relpos)<20)%>%summarise(n_distinct(hgnc))
+tmp%>%filter(abs(relpos)<=10)%>%summarise(n_distinct(id))
+9555/16985
+cat("PPI>0.8")
+tmp%>%group_by(time,hgnc)%>%filter(ratio>=0.8)%>%ungroup()%>%
+  #filter(abs(relpos)<=20)%>%
+  group_by(time)%>%summarise(n_distinct(hgnc))
+
+tmp%>%group_by(id)%>%summarise(t=n_distinct(CPSid))%>%group_by(t)%>%summarise(n())
+tmp%>%summarise(n_distinct(hgnc))
+tmp%>%summarise(n_distinct(id))
+tmp%>%summarise(n_distinct(CPSid))
+tmp%>%group_by(time)%>%summarise(n_distinct(hgnc))
+tmp%>%group_by(time,hgnc)%>%filter(ratio<1)%>%ungroup()%>%group_by(time)%>%summarise(n_distinct(hgnc))
+tmp%>%group_by(time,hgnc)%>%filter(ratio>=0.8&ratio<1)%>%ungroup()%>%group_by(time)%>%summarise(n_distinct(hgnc))
+tmp%>%group_by(time,hgnc)%>%filter(ratio>=0.8)%>%ungroup()%>%
+  filter(abs(relpos)<=20)%>%
+  group_by(time)%>%summarise(n_distinct(hgnc))
+
+head(tmp)
+8596/13097
+7292/10367
+``` 
+  
+```{R}
+tmp=tmp%>% select(ratio,mean.rc,time, CPSid)%>%
+  inner_join(tmp_%>%ungroup()%>%select(relpos,id,hgnc,CPSid)%>%distinct_at(vars(relpos,id,hgnc,CPSid)),by="CPSid")%>%
+  filter(ratio>0.00)
+
+tmp=cps%>%select(-CPSpos,-refpos,-strand,-cps.ratio.perhgnc,-cpsNo)%>%group_by(id,hgnc,CPSid,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(hgnc,id, time,CPSid)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(hgnc, time)%>%distinct_at(vars(CPSid),.keep_all = T)%>%
+  mutate(ratio=(mean.rc+0.01)/sum(mean.rc+0.01))%>%ungroup()%>%
+  select(ratio,mean.rc,time, CPSid,relpos)%>%
+  inner_join(tmp_%>%ungroup()%>%select(relpos,id,hgnc,CPSid)%>%distinct_at(vars(relpos,id,hgnc,CPSid)),by="CPSid")%>%
+  filter(ratio>0.00)
+tmp%>%group_by(time)%>%summarise(n_distinct(hgnc))
+tmp%>%group_by(time,hgnc)%>%filter(ratio>=0.8&ratio<1)%>%ungroup()%>%group_by(time)%>%summarise(n_distinct(hgnc))
+tmp%>%group_by(time,hgnc)%>%filter(ratio>0.9)%>%ungroup()%>%group_by(time)%>%summarise(n_distinct(hgnc))
+
+head(tmp)
+
+```
+
+5.3. Select major CPS position for individual transcriptid in each sample
+```{R}
+tmp_relpos.majorpeak=cps%>%select(-CPSpos,-strand,-cps.ratio.perhgnc,-refpos)%>%group_by(CPSid,id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(hgnc,time,CPSid,(abs(relpos)))%>%
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(hgnc,id, time)%>%
+   mutate(ratio=(mean.rc+1)/sum(mean.rc+1))%>%
+  filter(ratio>=0.10)%>%
+  ungroup()%>%select(hgnc,id,CPSid,time,relpos)%>%ungroup()
+
+
+
+tmp_relpos.majorpeak=cps%>%select(-CPSpos,-strand,-cps.ratio.perhgnc,-refpos)%>%group_by(CPSid,id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(hgnc,time,CPSid,(abs(relpos)))%>%
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(hgnc, time)%>%
+   mutate(ratio=(mean.rc+1)/sum(mean.rc+1))%>%
+  filter(ratio>=0.80)%>%
+  ungroup()%>%select(hgnc,id,CPSid,time,relpos)%>%ungroup()
+```
+
+```{R}
+
+tmp_relpos.majorpeak%>%ungroup()%>%summarise(n_distinct(CPSid))
+tmp_relpos.majorpeak%>%ungroup()%>%filter(abs(relpos)<20)%>%summarise(n_distinct(CPSid))
+tmp_relpos.majorpeak%>%filter(abs(relpos)<20)%>%summarise(n_distinct(hgnc))
+
+tmp_relpos.majorpeak%>%ungroup()%>%summarise(n_distinct(CPSid))
+tmp_relpos.majorpeak%>%ungroup()%>%filter(abs(relpos)<20)%>%summarise(n_distinct(CPSid))
+
+tmp_relpos.majorpeak
+tmp_relpos.majorpeak%>%ungroup()%>%summarise(n_distinct(hgnc))
+tmp_relpos.majorpeak%>%ungroup()%>%group_by(hgnc)%>%summarise(t=n_distinct(CPSid))%>%group_by(t)%>%summarise(n())
+tmp_relpos.majorpeak%>%ungroup()%>%summarise(n_distinct(id))
+tmp_relpos.majorpeak%>%ungroup()%>%summarise(n_distinct(CPSid))
+13585/23150
+10421/17524
+```
+
+```{R}
+pdf("FigS1F_singlemajorpeak.relpos.pdf",width=4.5,height = 4)
+ggplot(tmp_relpos.majorpeak,aes(relpos,fill=as.factor(time)))+
+  geom_histogram(binwidth = 5)+
+  facet_wrap(.~time,ncol=2)+
+  xlim(c(-500,500))+
+  scale_colour_manual(values = yk.col(4)[1:4])+
+  scale_fill_manual(values = yk.col(4)[1:4])+theme_bw()+
+  theme(legend.position = "none")+
+  xlab("Relative position from the reference PAS")+ylab("Number of de novo PASs")
+dev.off()
+
+
+
+```
+
+Characteristics of poly(A) site switch
+0.
+TSI index: alternative poly(A) switch
+```{r}
+tmp=cps%>%left_join(stopcodon, by="id")
+
+#<reference 3'UTR length>
+tmp%>%ungroup()%>%filter(!is.na(start))%>%select(refpos,id,start)%>%mutate(len=abs(refpos-start))%>%distinct_at(vars(id),.keep_all = T)%>%ungroup()%>%summarise(mean(len))
+
+sid=tmp%>%ungroup()%>%filter(!is.na(start))%>%select(hgnc,refpos,id,start,strand)%>%
+  group_by(id,strand)%>%mutate(newstart=ifelse(strand=="+",min(start) ,max(start)))%>%ungroup()%>%
+  arrange(hgnc,newstart,id,refpos)%>%
+  distinct_at(vars(hgnc,newstart,id,refpos),.keep_all = T)%>%ungroup()%>%
+  group_by(hgnc,newstart)%>%
+  arrange(id)%>%
+  mutate(len=abs(refpos-newstart))%>%filter(len==max(len))%>%ungroup()
+#select transcript id with the longest UTR for a gene.
+#sid=tmp%>%ungroup()%>%filter(!is.na(start))%>%select(hgnc,refpos,id,start)%>%distinct_at(vars(hgnc,id,refpos,start),.keep_all = T)%>% mutate(len=abs(refpos-start))%>%group_by(hgnc)%>%filter(len==max(len))%>%ungroup()
+#sid=(sid%>%select(id))
+sid
+sid=(sid%>%select(id,newstart))
+tmp=cps%>%inner_join(sid, by="id")
+head(tmp,100)
+#calculate relative 3'UTR length of PAS isforms within the given longest UTR.
+
+tmp2=tmp%>%
+  select(-cps.ratio.perhgnc,-cpsNo)%>%
+  #distinct_at(vars(hgnc,CPSid,time),.keep_all = T)%>%ungroup()%>%
+  group_by(CPSpos,refpos,strand,CPSid,relpos,id,hgnc,time,newstart)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(hgnc,time)%>%mutate(tandomUTR=ifelse(strand=="+",CPSpos-newstart,newstart-CPSpos))%>%filter(tandomUTR>0)
+
+tmp2=tmp2%>%ungroup()%>%
+  distinct_at(vars(id,CPSid,time,tandomUTR),.keep_all = T)%>%ungroup()#%>%arrange(hgnc,time,newstart,desc(tandomUTR))%>%distinct_at(vars(hgnc,time,newstart),.keep_all = T)
+
+tmp2%>%ungroup%>%filter(hgnc=="YBX1")
+```
+
+
+```{R}
+final.tmp=cps%>%select(-CPSpos,-cps.ratio.perhgnc)%>%group_by(strand,CPSid,id,hgnc,cpsNo,time,relpos,refpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(hgnc,time,refpos)%>%
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)#%>%inner_join(id%>%select(-hgnc),by="id")
+final.tmp=final.tmp%>%separate(CPSid,c("chr","CPSpos"),sep=":",remove = F)%>%ungroup()%>%
+  mutate(CPSpos=as.numeric(CPSpos))%>%
+  group_by(hgnc)%>%mutate(refpos=ifelse(strand=="-",min(refpos),max(refpos)))%>%
+  mutate(relpos=ifelse(strand=="-",refpos-CPSpos,-refpos+CPSpos))%>%group_by(hgnc,time)%>%
+  mutate(cpsNo=rank(relpos))
+final=final.tmp
+#final.tmp%>%filter(hgnc=="DDX5")
+#final.tmp=final.tmp%>%distinct_at(vars(hgnc,relpos,time),.keep_all = T)
+#which(duplicated(final.tmp%>%select(hgnc,relpos,time)))
+final%>%ungroup%>%summarise(n_distinct(hgnc))
+final%>%ungroup%>%group_by(hgnc)%>%summarise(t=n_distinct(CPSid))%>%group_by(t)%>%summarise(n())
+final.tmp=final%>%filter(time%in%c(1,4))
+
+```
+
+
+1. isoform-weighted 3´UTR length
+```{r}
+#stopcodon<-read.table("v26UTRstartpos.txt",header=T,stringsAsFactors = F)
+#stopcodon<-read.table("3' UTRAnnotation.bed.txt",header=F,stringsAsFactors = F)
+ref<-read.table("transcripts.bed13",header = F,stringsAsFactors = F)
+
+#stopcodon=stopcodon%>%inner_join(ref%>%select(id,hgnc),by="id")%>%mutate(len=V3-V2)%>%group_by(hgnc)%>%
+  filter(len==max(len))
+stopcodon<-read.table("utr.bed",header = F,stringsAsFactors = F)
+stopcodon=stopcodon%>%rename(id=V4)
+stopcodon=stopcodon%>%select(id,V5,V2,V3)%>%mutate(start=ifelse(V5=="+",V2,V3))%>%select(start,id)
+#stopcodon=stopcodon%>%ungroup()%>%distinct_at(vars(start,id),.keep_all = T)%>%select(start,id)
+#stopcodon%>%mutate(l=ifelse(V5=="+",V3-V2,V3-V2))%>%summarise(mean(l))
+#stopcodon=stopcodon%>%mutate(start=ifelse(V6=="+",V2,V3))%>%select(start,V1)
+colnames(stopcodon)=c("start","id")
+#ref=ref%>%inner_join(stopcodon,by="id")
+```
+
+
+TSi summary table
+```{R}
+TSI<-read.table("TSIgenes.txt",header=T,stringsAsFactors = F)
+TSI[4,2]=0
+TSI=TSI[c(1,2,3),]
+TSI=TSI%>%gather(`3´UTR`,NumberofGenes, -Comparison)
+TSI=TSI%>%mutate(NumberofGenes=as.numeric(NumberofGenes))
+pdf("bar_poly(A)switch.summary.pdf",width=6,height=3)
+ggplot(TSI,aes(Comparison,NumberofGenes,group=`3´UTR`,fill=`3´UTR`))+geom_bar(stat="identity")+scale_fill_manual(values=yk.col(5)[c(4,2)])+theme_bw()+xlab("")+ylab("Number of genes poly(A) site swtich")
+dev.off()
+```
+
+TSI index
+```{R}
+f=final%>%ungroup%>%filter(hgnc=="YBX1")%>%select(relpos,time,mean.rc)%>%spread(relpos,mean.rc)#%>%
+f=f%>%mutate(time=as.numeric(time))
+f
+mat=as.matrix(f[c(1:4),-1])
+rownames(mat)=c(0,1,2,4)
+t=matrix(as.vector(mat),byrow=F,ncol=ncol(mat),dimnames = list("time"=rownames(mat),
+                                                                "Relative Position from the ref poly(A) site"=colnames(mat)))
+
+#t=prop.table(t,margin=1)*100
+t=as.table(round(t))
+t
+
+lt <- lbl_test(t, scores = list("Relative Position from the reference poly(A) site"=1:ncol(t),"time"=1:nrow(t)))
+cmh_test(t)
+lt
+spineplot(t)
+library("graphics")
+pdf("LRCH4_exampleofTSI>0_mosaic.pdf",width=4.5,height=6)
+    mosaicplot((t), shade = F, las=1,cex.axis = 0.66,
+           main = "Poly(A) site switch of LRCH4",color = yk.col(ncol(t))[1:ncol(t)],labeling_args = list(
+     gp_labels = gpar(fontsize = 12, fontface = 3),
+     gp_varnames = gpar(fontsize = 16, fontface = 2)))
+
+dev.off()
+install.packages("vcd")
+library("vcd")
+# plot just a subset of the table
+
+assoc(t[,(ncol(t)-5):ncol(t)], shade = T, las=1)
+pdf("LRCH4_exampleofTSI>0.pdf",width=4,height=3)
+assocplot(t(t), col=yk.col(5)[c(4,2)],space =0.5)
+dev.off()
+
+
+# install.packages("devtools")
+#devtools::install_github("haleyjeppson/ggmosaic")
+library(ggmosaic)
+```
+
+
+```{R}
+#col:1st arg
+#row:2nd arg
+#data:3rd arg
+# Apply chisq.test per each gene (3'UTR) group
+cr.pv = final.tmp %>%
+	ungroup() %>%
+	group_by(hgnc) %>%
+	summarise(pval = diffCPS.test(CPSid,time, rc))
+
+cr.pv = cr.pv %>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))
+
+alt.gene=cr.pv%>%filter(fdr<0.05)
+alt.gene%>%filter(hgnc=="TOLLIP") #3538genes does have difference in usage of poly(A) sites between time-course samples
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+head(cps)
+all=cps%>%select(-CPSpos,-strand,-cps.ratio.perhgnc,-refpos)%>%group_by(CPSid,id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(id, time,cpsNo)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(id, time)%>%
+   mutate(ratio=(mean.rc+1)/sum(mean.rc+1))%>%
+  #filter(ratio>=0.70)%>%
+  ungroup()%>%select(-mean.rc,-ratio)%>%
+  #spread(time,relpos)%>% 
+  filter_all(all_vars(!is.na(.)))%>%ungroup()#%>%filter(abs(relpos)<10)
+all%>%ungroup()%>%summarise(n_distinct(hgnc))
+all%>%ungroup()%>%summarise(n_distinct(id))
+all%>%ungroup()%>%summarise(n_distinct(CPSid))
+#all%>%group_by(hgnc)%>%summarise(t=n_distinct(CPSid))%>%group_by(t)%>%summarise(n())%>%colSums()
+10936/25423
+14174/29202
+```
+
+```{R}
+
+tmp=cps%>%select(-CPSpos,-strand,-cps.ratio.perhgnc,-refpos)%>%group_by(CPSid,id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(hgnc, time)%>%
+   mutate(ratio=(mean.rc+1)/sum(mean.rc+1))%>%
+  #filter(ratio>=0.70)%>%
+  ungroup()%>%select(hgnc,CPSid,time,relpos)%>%
+  spread(time,relpos)%>% 
+  filter_all(all_vars(!is.na(.)))%>%ungroup()%>%group_by(hgnc)%>%summarise(t=n_distinct(CPSid))%>%group_by(t)%>%summarise(n())
+tmp
+
+```
+Number of genes with different numbers of tandem poly(A) sites.
+```{R}
+
+tmp=tmp%>%mutate(count=ifelse(t<=15,t,">15"))%>%group_by(count)%>%summarise(sum=sum(`n()`))%>%mutate(count=factor(count,levels=c(1:15,">15")))
+write.table(tmp,"summaryoftallyof genes withCPSNo.txt",sep="\t",quote=F,row.names = F,col.names = T)
+pdf("Number of genes with different numbers of poly(A) sites.pdf",width=4,height=3)
+ggplot(tmp,aes(x=count,y=sum))+geom_bar(stat = "identity")+ylab("Number of genes")+xlab("3´CPS counts")+
+  theme_bw()
+dev.off()
+```
+
+
+
+```{R}
+head(cps)
+tmp_relpos.majorpeak=cps%>%select(-CPSpos,-strand,-cps.ratio.perhgnc,-refpos)%>%group_by(CPSid,id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(hgnc, time)%>%
+   mutate(ratio=(mean.rc+1)/sum(mean.rc+1))%>%
+  filter(ratio>=0.8)%>%
+  ungroup()%>%select(hgnc,time,relpos)%>%
+  spread(time,relpos)%>% 
+  filter_all(all_vars(!is.na(.)))
+tmp_relpos.majorpeak%>%summarise(n_distinct(hgnc))
+tmp_relpos.majorpeak%>%summarise(n_distinct(id))
+5983/12347
+
+alt.cps=tmp_relpos.majorpeak%>%
+  mutate(`0h-1h`=`1`-`0`)%>%
+  mutate(`0h-2h`=`2`-`0`)%>%
+  mutate(`0h-4h`=`4`-`0`)%>%
+  mutate(`1h-2h`=`2`-`1`)%>%
+  mutate(`1h-4h`=`4`-`1`)%>%
+  mutate(`2h-4h`=`4`-`2`)%>%
+  select(contains("h"),hgnc)%>%
+  gather("comparison","dCPS",-hgnc)
+```
+
+
+
+```{R}
+majorcps=cps%>%select(-CPSpos,-strand,-cps.ratio.perhgnc,-refpos)%>%group_by(id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(id, time,cpsNo)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(hgnc, time)%>%
+  mutate(ratio=(mean.rc+0.1)/sum(mean.rc+0.1))%>%
+  filter((id %in%singlepeak.list$id))%>% ungroup()%>%
+  select(-mean.rc)%>%
+  spread(time,ratio)%>% filter_all(all_vars(!is.na(.)))
+nrow(majorcps)
+majorcps.ratio=majorcps%>%select(-relpos)%>%
+  gather("time","ratio",-id,-hgnc,-cpsNo)%>%
+  group_by(id,hgnc,time)%>%
+  mutate(rank=rank(-ratio))%>%
+  filter(rank==1)%>%
+  spread(time,ratio)%>%
+#%>%arrange(id,hgnc,time)%>%group_by(id,hgnc,time)%>%spread(cpsNo,ratio)
+  mutate(`0h-1h`=`1`-`0`)%>%
+  mutate(`0h-2h`=`2`-`0`)%>%
+  mutate(`0h-4h`=`4`-`0`)%>%
+  mutate(`1h-2h`=`2`-`1`)%>%
+  mutate(`1h-4h`=`4`-`1`)%>%
+  mutate(`2h-4h`=`4`-`2`)%>%
+  select(id,cpsNo,hgnc,contains("h"))%>%
+  gather("comparison","Change",-id,-cpsNo,-hgnc)%>%
+ filter_all(all_vars(!is.na(.)))%>%group_by(comparison)#%>%mutate(bin=cut(Change, breaks=seq(from=-0.3,to=0.3,length=10)))
+
+```
+
+
+
+Draw fold change of peak upon LPS stimulation
+```{R}
+library(ggbeeswarm)
+col = yk.col(6)[c(1:6)]
+pdf("MajorCPSratiochage.pdf",width=6,height = 3)
+ggplot(majorcps.ratio,aes(x=Change,fill=comparison))+
+  geom_histogram(bins =20)+
+  facet_wrap(comparison~.,)+
+  xlim(c(-0.2,0.2))+
+  scale_fill_manual(values = col)+theme_bw()+ylab("Number of transcripts")+
+  xlab(" Change in relative abundance of major CPS isoform between two timepoints")
+dev.off()
+```
+#~96 to 98% transcripts with single major CPS showed relative ratio changes less than 4%
+```{R}
+t=majorcps.ratio%>%group_by(comparison)%>%mutate(bin=cut(Change, breaks=seq(from=-0.3,to=0.3,length=20)))%>%group_by(comparison,bin)%>%summarise(table=n())%>%spread(comparison,table)
+t=t%>%gather("comp","count",-bin)%>%group_by(comp)%>%mutate(percent=(count/sum(count)))%>%select(-count)%>%spread(comp,percent)
+colSums(t[c(9:11),2:7])
+write.table(majorcps.ratio%>%group_by(comparison)%>%mutate(bin=cut(Change, breaks=seq(from=-0.3,to=0.3,length=20)))%>%group_by(comparison,bin)%>%summarise(table=n())%>%spread(comparison,table)
+
+  ,"majorpeak.ratio.change.binning.txt",quote=F,col.names=T,row.names=F,sep="\t")
+
+
+```
+
+```{R}
+majorcps.ratio=majorcps%>%select(-relpos)%>%
+  gather("time","ratio",-id,-hgnc,-cpsNo)%>%group_by(id,hgnc,time)%>%mutate(rank=rank(-ratio))%>%filter(rank==1)%>%
+  spread(time,ratio)%>%
+  mutate(`0h`=`0`-`0`)%>%
+   mutate(`1h`=`1`-`0`)%>%
+  mutate(`2h`=`2`-`0`)%>%
+  mutate(`4h`=`4`-`0`)%>%
+  filter_all(all_vars(!is.na(.)))%>%
+  select(contains("h"),id,hgnc)%>%rename("0"=`0h`)%>%rename("1"=`1h`)%>%rename("2"=`2h`)%>%rename("4"=`4h`)%>%
+  gather("time","ratio",-id,-hgnc)%>%mutate(time=as.numeric(time))
+
+#summary table
+df_summary=majorcps.ratio%>%group_by(time)%>%summarise(n=n(),mean=mean(ratio),sd=sd(ratio),se = sd(ratio, na.rm=T)/sqrt(sum(!is.na(ratio))))
+df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary
+
+pdf("majorCPSisoform.timecourseratio.pdf",width=6,height=3)
+ggplot(majorcps.ratio, aes(x=time, y=ratio)) +
+   geom_line(data=majorcps.ratio, aes(x=time, y=ratio,group=id), size=0.1, alpha=0.5)+
+  ylim(c(-0.5,0.5))+theme_bw()+ylab("ratio(majorCPS/allCPSs per transcript)")+
+  ggplot(df_summary, aes(x=time, y=mean)) +geom_line(data=df_summary, aes(x=time, y=mean), size=1, alpha=0.8)+
+ # scale_fill_manual(values=col,name = "PAL", labels = c("DN", "NC", "UP"))+theme_bw()+facet_grid(.~dTED_group,labeller = labeller(dTED_group=pal.labs))+scale_fill_manual(values=col,name = "PAL", labels = c("DN", "NC", "UP"))
+  geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper), alpha=0.3)+ylim(c(-0.5,0.5))+theme_bw()+ylab("mean±sd)")
+dev.off()
+```
+
+
+
+
+##################################################################
+difference in RNA abundanceand poly(A) tail length control between two ref transcript isoforms
+
+```{R}
+
+cps%>%select(-custompos,-refpos,-CPSid,-V6,-chr)%>%group_by(id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(id, time,cpsNo)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(id, time)%>%
+  mutate(ratio=(mean.rc+0.1)/sum(mean.rc+0.1))%>%
+  filter(id %in%tmp_relpos.majorpeak$id)%>%group_by(hgnc)%>%summarise(isoforms=n_distinct(id))%>%ungroup()%>%group_by(isoforms)%>%summarise(n())
+
+#for the genes with two transcript isoforms, (n=651)
+tmp=cps%>%select(-refpos,-CPSid,-chr)%>%group_by(id,hgnc,cpsNo,time,relpos,custompos,V6)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(id, time,cpsNo)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(id, time)%>%
+   mutate(ratio=(mean.rc+0.1)/sum(mean.rc+0.1))%>%
+    filter(ratio>=0.70)%>%
+  ungroup()%>%select(-ratio,-cpsNo,-relpos)%>%
+    spread(time,mean.rc)%>%
+  filter_all(all_vars(!is.na(.)))
+
+
+#Genes with 2 transcript isoforms only.
+tmp=tmp%>%group_by(hgnc)%>%distinct_at(vars(hgnc,custompos),.keep_all = T)%>%
+  summarise(isoforms=n_distinct(id))%>%ungroup()%>%filter(isoforms==2)%>%
+  inner_join(tmp,by="hgnc")%>%distinct_at(vars(hgnc,custompos),.keep_all = T)%>%ungroup()
+#"+"
+tmp.pl=tmp%>%select(-isoforms,-id)%>%group_by(hgnc)%>%filter(V6=="+")%>%arrange(custompos)%>%mutate(type=rep(c("proximal","distal")))
+tmp.pl%>%filter(grepl("YIPF",hgnc))
+nrow(tmp.pl)
+#tmp.pl$type=rep(c("proximal","mid","distal"))
+#-
+tmp.mn=tmp%>%select(-isoforms,-id)%>%group_by(hgnc)%>%filter(V6=="-")%>%arrange(desc(custompos))%>%mutate(type=rep(c("proximal","distal")))
+#tmp.mn$type=rep(c("proximal","mid","distal"))
+tmp=bind_rows(tmp.mn,tmp.pl)
+#tmp%>%distinct_at(vars(hgnc,custompos),.keep_all = T)%>%group_by(hgnc)%>%summarise(isoforms=n())%>%ungroup()%>%filter(isoforms>=2)%>%inner_join(tmp,by="hgnc")%>%distinct_at(vars(hgnc,custompos),.keep_all = T)
+tmp=tmp%>%filter_all(all_vars(!is.nan(.)))%>%gather("time","rc",-hgnc,-custompos,-type,-V6)
+tmp%>%summarise(n_distinct(hgnc))
+tmp%>%group_by(hgnc)%>%summarise(t=n_distinct(type))%>%ungroup()%>%group_by(t)%>%summarise(n())
+```
+```{R}
+# Function to apply chisq.test() to tibble groups
+diffCPS.test = function(tm, cn, rc) {
+	cont.t = data.frame(time = tm, cpsNo = cn, readCount = rc) %>%
+		spread(time, readCount)
+	return(chisq.test(cont.t[, -1])$p.value)}
+```
+```{R}
+
+# Apply chisq.test per each gene (3'UTR) group
+cr.pv = tmp %>%
+	ungroup() %>%
+	group_by(hgnc) %>%
+	summarise(pval = diffCPS.test(time, type, rc))
+
+
+cr.pv = cr.pv %>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))
+
+alt.gene=cr.pv%>%filter(fdr<0.05)
+```
+
+```{R}
+tmp=tmp%>%spread(time,rc)%>%mutate(change=ifelse(log2(`4`/`0`)>0.5,"up",ifelse(log2(`4`/`0`)<(-0.5),"dn","nc")))%>%gather("time","rc",-hgnc,-V6,-custompos,-type,-change)
+cpses=tmp %>%inner_join(cr.pv,by="hgnc")%>%filter(fdr<0.05)
+b=cpses%>%group_by(hgnc,time)%>%mutate(ratio=rc/sum(rc))%>%arrange(hgnc,time,type)%>%
+  ungroup()%>%select(hgnc,custompos,type)%>%distinct_at(vars(hgnc,custompos),.keep_all=T)%>%
+  spread(type, custompos)%>%mutate(distance=abs(distal-proximal))%>%filter(distance>400)#%>%(distance=abs(proximal-mid))%>%filter(distance>400)
+
+#genes with upregulated
+
+c=cpses%>%group_by(hgnc,time)%>%
+  mutate(ratio=rc/sum(rc))%>%
+  arrange(hgnc,time,type)%>%
+  ungroup()%>%filter(hgnc%in%b$hgnc)%>%
+  #mutate(type=factor(type,levels=c("proximal","mid","distal")))
+  mutate(type=factor(type,levels=c("proximal","distal")))
+
+
+d=cpses%>%group_by(hgnc,time)%>%
+  mutate(ratio=rc/sum(rc))%>%
+  arrange(hgnc,time,type)%>%
+  ungroup()%>%
+  select(-pval,-fdr,-custompos,-ratio)%>%spread(time,rc)%>%
+  mutate(type=factor(type,levels=c("proximal","distal")))%>%
+  #mutate(type=factor(type,levels=c("proximal","mid","distal")))%>%
+  filter(hgnc%in%b$hgnc)
+#colnames(d)[4:7]=c(0,1,2,4)
+  d=d%>%mutate(`0h-1h`=`1`/`0`)%>%
+  mutate(`0h-2h`=`2`/`0`)%>%
+  mutate(`0h-4h`=`4`/`0`)%>%
+  mutate(`1h-2h`=`2`/`1`)%>%
+  mutate(`1h-4h`=`4`/`1`)%>%
+  mutate(`2h-4h`=`4`/`2`)%>%
+  select(contains("h"),type,V6,hgnc,change)%>%gather("time.diff","dRNA",-type,-V6,-hgnc,-change)
+
+```
+
+```{R}
+yk.cols = yk.col(5)[c(1,2,4,5)]
+pdf("proximalvsdistal_Geneswith2CPSs.pdf",width = 10,height=2.5)
+ggplot(c,aes(x=type,y=ratio))+
+geom_quasirandom(aes(col=type),size=1)+facet_grid(change~time)+
+  scale_colour_manual(values=yk.col(5)[c(2,4)] )+theme_bw()+
+  geom_boxplot(alpha=0.3, color="black", width=.2)+xlab("CPS peak type")+ylab("RNA abundance")
+dev.off()
+
+pdf("proximalvsdistal_comparisonGeneswith2CPSs.pdf",width = 10,height=8)
+ggplot(d,aes(x=type,y=log2(dRNA)))+
+geom_quasirandom(aes(col=type),size=1)+facet_wrap(change~time.diff,ncol = 6,scales ="free_y")+
+  scale_colour_manual(values=yk.col(5)[c(2,4)] )+theme_bw()+
+  geom_boxplot(alpha=0.3, color="black", width=.2)+xlab("CPS peak type")+ylab("Change in CPS usage")
+dev.off()
+
+
+#Average distance between distal and proximal
+ggplot(b,aes(x=distance))+geom_histogram(bins=50)
+```
+
+```{R}
+#differential pal dynamcis between proximal and distal cps.
+tmp=cps%>%select(-refpos,-CPSid,-chr)%>%group_by(id,hgnc,cpsNo,time,relpos,custompos,V6)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(id, time,cpsNo)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(id, time)%>%
+   mutate(ratio=(mean.rc+0.1)/sum(mean.rc+0.1))%>%
+    filter(ratio>=0.70)%>%
+  ungroup()%>%select(-ratio,-cpsNo,-relpos)%>%
+    spread(time,mean.rc)%>%
+  filter_all(all_vars(!is.na(.)))%>%select(-`0`,-`1`,-`2`,-`4`)
+tmp
+pal=read.table("REAL.final_PAL_MEAN.data.txt", stringsAsFactors = F,header=T)
+ref<-read.table("transcripts.bed13",header = F,stringsAsFactors = F)
+ref=ref%>%rename("id"=V4)%>%rename("hgnc"=V13)%>%
+  mutate(V2=as.numeric(V2))%>%
+  mutate(V3=as.numeric(V3))%>%
+  mutate("refpos"=ifelse(V6=="+",V3-1,V2))%>%select("id","hgnc","refpos")
+pal=ref%>%inner_join(pal,by="id")
+pal%>%filter(grepl("TOLLIP",hgnc))
+tmp=tmp%>%group_by(hgnc)%>%distinct_at(vars(hgnc,custompos),.keep_all = T)%>%
+  summarise(isoforms=n_distinct(id))%>%ungroup()%>%filter(isoforms==2)%>%
+  inner_join(tmp,by="hgnc")%>%distinct_at(vars(hgnc,custompos),.keep_all = T)
+#"+"
+tmp.pl=tmp%>%select(-isoforms)%>%group_by(hgnc)%>%filter(V6=="+")%>%arrange(custompos)%>%
+  mutate(type=rep(c("proximal","distal")))
+#-
+tmp.mn=tmp%>%select(-isoforms)%>%group_by(hgnc)%>%filter(V6=="-")%>%arrange(desc(custompos))%>%
+mutate(type=rep(c("proximal","distal")))
+
+
+tmp=bind_rows(tmp.mn,tmp.pl)
+tmp=tmp%>%inner_join(pal%>%select(-hgnc),by="id")
+
+tmp=tmp%>%mutate(`0`=X0h-X0h)%>%
+  mutate(`1`=X1h-X0h)%>%
+  mutate(`2`=X2h-X0h)%>%
+  mutate(`4`=X4h-X0h)%>%
+  select(-contains("X"))
+tmp
+tmp=tmp%>%gather("time","pal",-id,-hgnc,-custompos,-type,-V6,-refpos)
+tmp=tmp%>%group_by(id)%>%mutate(dpal=pal-min(pal))
+tmp%>%summarise(n_distinct(hgnc))
+tmp%>%filter(grepl("CALM1",hgnc))%>%select(-pal)%>%spread(time,dpal)
+```
+
+```{R}
+# Apply chisq.test per each gene (3'UTR) group
+cr.pv = tmp %>%
+	ungroup() %>%
+	group_by(hgnc) %>%
+	summarise(pval = diffCPS.test(time, type, dpal))
+
+
+cr.pv = cr.pv %>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))
+
+alt.gene=cr.pv%>%filter(fdr<0.05)
+```
+
+
+```{R}
+cpses=tmp %>%inner_join(cr.pv,by="hgnc")#%>%filter(fdr<0.01)
+b=cpses%>%group_by(hgnc,time)%>%arrange(hgnc,time,type)%>%
+  ungroup()%>%select(hgnc,pal,type,time)%>%group_by(hgnc,time)%>%spread(type, pal)%>%mutate(distance=(distal-proximal))#%>%filter(distance>500)
+ggplot(b,aes(x=distance))+geom_histogram(bins=30)
+c=cpses%>%group_by(hgnc,time)%>%
+  #mutate(ratio=rc/sum(rc))%>%
+  arrange(hgnc,time,type)%>%
+  ungroup()%>%filter(hgnc%in%b$hgnc)
+nrow(c)
+d=cpses%>%group_by(hgnc,time)%>%
+  #mutate(ratio=rc/sum(rc))%>%
+  arrange(hgnc,time,type)%>%
+  ungroup()%>%
+  select(-pval,-fdr,-custompos,-pal)%>%spread(time,dpal)%>%
+  filter(hgnc%in%b$hgnc)
+colnames(d)[6:9]=c(0,1,2,4)
+  d=d%>%mutate(`0h-1h`=`1`-`0`)%>%
+  mutate(`0h-2h`=`2`-`0`)%>%
+  mutate(`0h-4h`=`4`-`0`)%>%
+  mutate(`1h-2h`=`2`-`1`)%>%
+  mutate(`1h-4h`=`4`-`1`)%>%
+  mutate(`2h-4h`=`4`-`2`)%>%
+  select(contains("h"),type,V6,hgnc)%>%gather("time.diff","dRNA",-type,-V6,-hgnc)
+
+```
+
+```{R}
+yk.cols = yk.col(5)[c(1,2,4,5)]
+pdf("proximalvsdistal.pdf",width = 8,height=2.5)
+ggplot(c,aes(x=type,y=pal))+
+geom_quasirandom(aes(col=type),size=1)+facet_grid(.~time)+
+  scale_colour_manual(values=yk.col(5)[c(2,4)] )+theme_bw()+
+  geom_boxplot(alpha=0.3, color="black", width=.2)+xlab("CPS peak type")+ylab("RNA abundance")+ylim(c(30,200))
+dev.off()
+
+pdf("proximalvsdistal_comparison.pdf",width = 10,height=2.5)
+ggplot(d,aes(x=type,y=dRNA))+
+geom_quasirandom(aes(col=type),size=1)+facet_wrap(.~time.diff,ncol = 6,scales = "fixed")+
+  scale_colour_manual(values=yk.col(5)[c(2,4)] )+theme_bw()+ylim(c(-20,20))+
+  geom_boxplot(alpha=0.3, color="black", width=.2)+xlab("CPS peak type")+ylab("Change in CPS usage")
+dev.off()
+
+
+#Average distance between distal and proximal
+ggplot(b,aes(x=distance))+geom_histogram(bins=50)
+```
+
+
+
+
+
+
+
+
+
+###########old
+3. Load the relevant data, and normalize counts by total readcounts
+
+```{r}
+#cps in ref region (+/-300 nucleotides))
+cps.ref<-read.table("cpsinrefcpsregion.bed7", stringsAsFactors = F, header=F)
+head(cps.ref)
+cps.ref=cps.ref%>%rename("id"=V4)%>%rename("CPSid"=V7)
+#add gene name;Reference position.
+ref<-read.table("transcripts.bed13",header = F,stringsAsFactors = F)
+ref=ref%>%rename("id"=V4)%>%rename("hgnc"=V13)%>%
+  mutate(V2=as.numeric(V2))%>%
+  mutate(V3=as.numeric(V3))%>%
+  mutate("refpos"=ifelse(V6=="+",V3-1,V2))%>%select("id","hgnc","refpos")
+#
+cps.ref=cps.ref%>%inner_join(ref,by="id")
+head(cps.ref)
+#filter transcripts in common with TED-seq
+pal=read.table("REAL.final_PAL_MEAN.data.txt", stringsAsFactors = F,header=T)
+
+cps.ref=cps.ref%>%filter(id %in%pal$id)%>%arrange(id)
+nrow(cps.ref)
+cps%>%summarise(n_distinct(hgnc))
+pal%>%summarise(n_distinct(id))
+pal%>%filter(grepl("ENST00000449264",id))
+#filter raedcount table to only contain cpses in refcpsregion.
+cps<-read.table("CPSreadCount_hk.txt", stringsAsFactors = F, header=T)
+nrow(cps)
+
+
+#hk
+cps=cps%>%select(-id,-cpsNo,-X30m.r1,-X8h.r1,-X8h.r2, -X0h.r2)
+#CPM normalization
+cps[,2:8]=sweep((cps[,2:8]), 2,colSums(cps[,2:8]) , "/")
+cps[,2:8]=cps[,2:8]*1000000
+colSums(cps[2:8])
+nrow(cps)
+cps=cps%>%filter_at(vars(contains("h.r")),all_vars(.>=1))
+cps
+cps=cps.ref%>%inner_join(cps,by="CPSid")
+cps%>%summarise(n_distinct(CPSid))
+cps%>%summarise(n_distinct(hgnc))
+cps%>%summarise(n_distinct(id))
+cps=cps%>%rename("cpsNo"=V8)
+cps=cps%>%filter(CPSid %in%cps.ref$CPSid)
+nrow(cps)
+head(cps)
+
+
+
+```
+
+
+
+6.3. Identify Transcripts with multiple CPSes that show different temporal abundance.
+```{R}
+# Function to apply chisq.test() to tibble groups
+diffCPS.test = function(tm, cn, rc) {
+	cont.t = data.frame(time = tm, cpsNo = cn, readCount = rc) %>%
+		spread(time, readCount)
+	return(chisq.test(cont.t[, -1])$p.value)}
+```
+
+```{R}
+# Apply chisq.test per each gene (3'UTR) group
+cr.pv = multicps %>%
+	ungroup() %>%
+	group_by(id) %>%
+	summarise(pval = diffCPS.test(time, cpsNo, ratio))
+
+
+cr.pv = cr.pv %>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))
+
+cr.pv%>%filter(fdr<0.01)
+
+#example
+library(stringr)
+tmp%>%select(Transcriptid,relpos,time,mean.rc)%>%spread(time,mean.rc)%>%filter(Transcriptid=="ENST00000000412.7")
+tmp%>%select(Transcriptid,relpos,time,mean.rc,CPSid)%>%spread(time,mean.rc)%>%filter(str_detect(Transcriptid,"ENST00000263646"))
+```
+
+
+
+```{R}
+sink("all.cps.stat.new.txt")
+cat("Number of transcript id per gene in CPS-seq data")
+cat("total number of genes detected in cps-seq:",cps%>%summarise(n=n_distinct(name))%>%unlist())
+cat("total number of transcriptids detected in cps-seq out of",cps%>%summarise(n=n_distinct(name))%>%unlist(),"genes:",cps%>%summarise(n_distinct(Transcriptid))%>%unlist())
+k=read.table("CPSreadCount_yk.txt", stringsAsFactors = F, header=T)
+cat("total number of distinct CPS positions in last exon of transcripts",cps.ref%>%summarise(n_distinct((CPSid)))%>%unlist())
+
+t=cps%>%group_by(name)%>%summarise(isocount=n_distinct(Transcriptid))%>%select(isocount)%>%table()
+t
+t[1:5]/sum(t)
+stat=cps%>%group_by(hgnc)%>%summarise(isocount=n_distinct(id))
+pdf("S1E_F1S12.1.pdf",width=4,height=3)
+ggplot(stat,aes(x=isocount))+geom_histogram(binwidth=1,fill= yk.col(5)[1])+
+  theme_bw()+xlab("Number of transcript ids per gene")+ylab("Number of genes")
+dev.off()
+
+cat("S1F_Histogram of number of CPSs per transcript id")
+cps.count.stat=cps%>%group_by(id)%>%summarise(cps.count=n_distinct(cpsNo))
+t=table(cps.count.stat$cps.count)
+cps.count.stat=tmp%>%group_by(id)%>%summarise(cps.count=n_distinct(cpsNo))
+t=table(cps.count.stat$cps.count)
+t
+sum(t)
+pdf("S1F.pdf",width=4,height=3)
+ggplot(cps.count.stat,aes(x=cps.count))+geom_histogram(binwidth = 1,fill= yk.col(5)[1])+
+  xlim(c(0,60))+
+  theme_bw()+xlab("Number of CPS positions per transcript id")+ylab("Number of transcript ids")
+dev.off()  
+
+
+cat("Histogram of number of all CPSs per gene")
+cps.name.count.stat=tmp%>%group_by(name,Transcriptid)%>%summarise(cps.count=n_distinct(cpsNo))%>%
+  ungroup()%>%group_by(name)%>%
+  summarise(totalcpscount=sum(cps.count))
+
+table(cps.name.count.stat$totalcpscount)
+pdf("F1S12.3.pdf",width=4,height=3)
+ggplot(cps.name.count.stat,aes(x=totalcpscount))+geom_histogram(binwidth = 1,fill= yk.col(5)[1])+
+  xlim(c(0,50))+
+  theme_bw()+xlab("Number of all CPS positions per gene")+ylab("Number of gene")
+ dev.off()
+```
+
+Genes with transition in major CPS position
+```{R}
+alt.cps%>%filter(abs(dCPS)>5)%>%select(hgnc)%>%distinct(hgnc)
+#EXAMPLE PRINT
+tmp_relpos.majorpeak%>%filter(grepl("CHTF8",hgnc))
+tmp_ratio%>%filter(grepl("CHTF8",hgnc))  
+tmp_rc%>%filter(grepl("PSMD4",hgnc))
+```
+Genes with no transition in major CPS position.
+```{R}
+write.table(alt.cps%>%filter(abs(dCPS)<5)%>%spread(comparison,dCPS)%>%na.omit()%>%select(id,hgnc)%>%group_by(id,hgnc)%>%distinct(),"CPS.majorpeak.unchanged.genes.txt",quote=F,sep="\t",col.names = T,row.names = F)
+singlepeak.list=alt.cps%>%filter(abs(dCPS)<=5)%>%spread(comparison,dCPS)%>%na.omit()%>%select(id,hgnc)%>%group_by(id,hgnc)%>%distinct()
+nrow(singlepeak.list)
+alt.cps=alt.cps%>%filter(abs(dCPS)<=5)
+```
+
+
+Change in major CPS positions
+
+```{R}
+yk.cols = yk.col(5)[c(2,3,4)]
+pdf("FigS1J_dCPS_all.pdf",width=6,height = 3)
+ggplot(alt.cps,aes(dCPS,fill=comparison))+geom_histogram(binwidth =1)+facet_wrap(comparison~.,)+xlim(c(-10,10))+scale_fill_manual(values = yk.cols)+theme_bw()+ylab("Number of transcripts")+
+  xlab("Distance between major CPS positions between two timepoints")#+ylim(c(0,750))
+dev.off()
+
+pdf("FigS1G_dCPS_refregion_minorpeaks.pdf",width=6,height = 3)
+ggplot(alt.cps,aes(dCPS,fill=comparison))+geom_histogram(binwidth = 10)+facet_wrap(comparison~.,)+xlim(c(-300,300))+scale_fill_manual(values = yk.cols)+theme_bw()+ylab("Number of transcripts")+ylim(c(0,100))
+dev.off()
+
+```
+
+```{R}
+tmp_ratio=cps%>%select(-CPSpos,-strand,-cps.ratio.perhgnc,-refpos)%>%group_by(id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(id, time,cpsNo)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(id, time)%>%
+   mutate(ratio=(mean.rc+0.1)/sum(mean.rc+0.1))%>%
+    filter(ratio>=0.70)%>%
+  ungroup()%>%select(-mean.rc,-cpsNo,-relpos)%>%
+    spread(time,ratio)%>%
+  filter_all(all_vars(!is.na(.)))
+
+tmp_rc=cps%>%select(-custompos,-refpos,-CPSid,-V6,-chr)%>%group_by(id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(id, time,cpsNo)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(id, time)%>%
+ mutate(ratio=(mean.rc+0.1)/sum(mean.rc+0.1))%>%
+    filter(ratio>=0.70)%>%
+  ungroup()%>%select(-ratio,-cpsNo,-relpos)%>%
+    spread(time,mean.rc)
+tmp_ratio
+#OPTION1
+#tmp_=tmp%>%group_by(Transcriptid,time)%>%mutate(rank=rank(-ratio))%>%filter(rank==1)%>%ungroup()
+
+```
+
+```{R}
+
+tmp=cps%>%select(-CPSpos,-cps.ratio.perhgnc,-refpos)%>%group_by(strand,CPSid,id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(hgnc,time,(abs(relpos)))%>%
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)%>%
+  filter(mean.rc>0)%>%
+  ungroup()%>%
+  group_by(hgnc, time)%>%
+   mutate(ratio=(mean.rc+1)/sum(mean.rc+1))%>%
+  ungroup()%>%select(hgnc,CPSid,time,mean.rc,strand)%>%
+    spread(time,mean.rc)%>%
+  filter_all(all_vars(!is.na(.)))
+tmp
+tmp2=cps%>%select(-CPSpos,-cps.ratio.perhgnc,-refpos)%>%group_by(strand,CPSid,id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(hgnc,time,(abs(relpos)))%>%
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)%>%
+  filter(mean.rc>0)%>%
+  ungroup()%>%
+  group_by(hgnc, time)%>%
+   mutate(ratio=(mean.rc+1)/sum(mean.rc+1))%>%
+  #filter(ratio>0.05)%>%
+  ungroup()%>%select(hgnc,CPSid,time,ratio,mean.rc,strand)
+tmp3=tmp2%>%separate(CPSid,c("chr","pos"),sep=":",remove = F)%>%select(-chr)%>%mutate(pos=as.numeric(pos))%>%
+  group_by(hgnc,time,strand)%>%mutate(CPSNo=ifelse(strand=="+",rank(pos),rank(-pos)))%>%mutate(relpos_=ifelse(strand=="+",pos-min(pos),-(pos-max(pos))))%>%ungroup()
+
+tmp4=tmp3%>%ungroup()%>%select(CPSid,relpos_,hgnc)%>%arrange(CPSid,relpos_)%>%distinct_at(vars(CPSid),.keep_all = T)
+head(tmp4)
+tmp_=tmp%>%inner_join(tmp4,by="CPSid")%>%filter(hgnc.x==hgnc.y)%>%rename(hgnc=hgnc.x)%>%select(-hgnc.y)
+tmp_%>%filter(CPSid=="chr19:2426887")
+#select genes with multiple CPSs
+tmp5=tmp_%>%group_by(hgnc)%>%distinct_at(vars(CPSid),.keep_all = T)%>%
+  summarise(isoforms=n_distinct(CPSid))%>%ungroup()%>%filter(isoforms>=2)
+
+final.tmp=tmp_%>%
+  filter(hgnc%in%tmp5$hgnc)%>%
+  filter_all(all_vars(!is.na(.)))%>%filter_all(all_vars(!is.nan(.)))%>%
+  ungroup()%>%select(-strand)%>%gather("time","rc",-hgnc,-CPSid,-relpos_)
+
+#final.tmp%>%filter(CPSid=="chr19:2426887")
+#final.tmp=final.tmp%>%distinct_at(vars(hgnc,relpos_,time),.keep_all = T)
+final.tmp%>%filter(hgnc=="TNF")%>%select(relpos_,time,rc)%>%spread(relpos_,rc)
+final.tmp%>%nrow()#ungroup()%>%group_by(hgnc,time,relpos)%>%distinct_at(vars(hgnc,CPSid,relpos,time))%>%nrow()
+final.tmp%>%group_by(hgnc)%>%summarise(t=n_distinct(time))%>%group_by(t)%>%summarise(n())
+```
+
+```{R}
+tmp=cps%>%select(-CPSpos,-cps.ratio.perhgnc,-refpos)%>%group_by(strand,CPSid,id,hgnc,cpsNo,time,relpos)%>%
+  summarise(mean.rc=mean(readcount))%>%ungroup()%>%
+  arrange(hgnc,time,(abs(relpos)))%>%
+  distinct_at(vars(hgnc,time,CPSid),.keep_all = T)%>%
+  filter(mean.rc>=0)%>%
+  ungroup()%>%
+  group_by(hgnc, time)%>%
+   mutate(ratio=(mean.rc+1)/sum(mean.rc+1))%>%
+  #filter(ratio>0.05)%>%
+  ungroup()%>%select(hgnc,CPSid,time,ratio,mean.rc,strand)#%>%
+#spread(time,relpos)%>% 
+#filter_all(all_vars(!is.na(.)))
+tmp%>%filter(hgnc=="RPL11")%>%separate(CPSid,c("chr","pos"),sep=":",remove = F)%>%select(-chr)%>%mutate(pos=as.numeric(pos))%>%
+  #mutate(loc=pos*ratio)%>%
+  group_by(hgnc,time,strand)%>%summarise(rel.change=weighted.mean(pos,ratio))
+tmp=tmp%>%separate(CPSid,c("chr","pos"),sep=":",remove = F)%>%select(-chr)%>%mutate(pos=as.numeric(pos))%>%
+  #mutate(loc=pos*ratio)%>%
+  group_by(hgnc,time,strand)%>%summarise(rel.change=weighted.mean(pos,ratio))
+tmp%>%filter(hgnc=="TNF")
+tmp2=tmp%>%spread(time,rel.change)%>% 
+  mutate(`0h`=`0`-`0`)%>%
+   mutate(`0h->1h`=`1`-`0`)%>%
+  mutate(`0h->2h`=`2`-`0`)%>%
+  mutate(`0h->4h`=`4`-`0`)%>%
+  select(-`0h`)%>%
+  filter_all(all_vars(!is.na(.)))%>%
+  select(contains("h"),strand,hgnc)%>%
+  #rename("0"=`0h`)%>%rename("1"=`1h`)%>%rename("2"=`2h`)%>%rename("4"=`4h`)%>%
+  gather("time","relpos",-strand,-hgnc)%>%mutate(time=as.factor(time))%>%mutate(relpos=ifelse(strand=="+",relpos,-relpos))
+tmp2%>%filter(relpos<(-10000))
+ggplot(tmp2,aes(x=as.factor(time),y=relpos))+geom_boxplot()+ylim(c(-100,100))
+
+ggplot(tmp2%>%filter(abs(relpos)>50),aes(x=relpos,group=time,fill=time))+geom_histogram(binwidth=5)+xlim(c(-100,1000))#+facet_grid(.~time)
+```
+
+
+
+```{R}
+cps.ref%>%arrange(hgnc,CPSid,abs(relpos))%>%distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%filter(abs(relpos)<20)%>%summarise(n_distinct(hgnc))
+
+cps.ref%>%arrange(hgnc,CPSid,relpos)%>%distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%group_by(id)%>%mutate(ratio=readcount/sum(readcount))%>%
+  
+  ungroup()%>%
+  #summarise(t=n_distinct(hgnc))%>%
+  filter(abs(relpos)>100)%>%
+  filter(ratio>0.5&ratio<=1)#%>%
+  summarise(n_distinct(hgnc))
+```
+
+```{R}
+cps.ref%>%arrange(hgnc,CPSid,abs(relpos))%>%distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%group_by(hgnc)%>%mutate(hgnc.ratio=readcount/sum(readcount))%>%ungroup()%>%
+  group_by(id)%>%mutate(id.ratio=readcount/sum(readcount))%>%ungroup()%>%
+  filter(!(hgnc.ratio<0.01))%>%ungroup()%>%
+filter(abs(relpos)<20)%>%
+filter(id.ratio>0.8)%>%
+ summarise(n_distinct(hgnc))
+cat("genes with single CPSid:", 5166)
+cat("genes with single Multiple CPSid:", 7181)
+cat("genes with multiple CPSid but having predominant CPSid withPPI>0.8", 1564)
+cat("genes with a predominant CPS with PPI >0.8": 6730,(5166+1564))
+
+cat("Proportion of genes with a CPS with PPI >0.8", "54%,6730/12347")
+6730/12347
+1564/7181
+cat("proportino of genes with a signle CPS",(cps.ref%>%group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))%>%filter(ratio>0.00)%>%
+                                               summarise(t=n_distinct(CPSid))%>%
+  group_by(t)%>%
+  filter(t==1)%>%nrow())/cps.ref%>%ungroup()%>%distinct_at(vars(hgnc))%>%nrow())
+cps.ref%>%ungroup()%>%summarise(n_distinct(CPSid))
+```
+3. Load the relevant data, and normalize counts by total readcounts
+
+```{r}
+#cps in ref region (+/-300 nucleotides))
+cps.ref<-read.table("cpsinlastexon.bed7", stringsAsFactors = F, header=F)
+cps.ref=cps.ref%>%separate(V4,c("id","refpos"),sep=":")%>%rename("CPSid"=V7)
+
+#add gene name;Reference position.
+ref<-read.table("transcripts.bed13",header = F,stringsAsFactors = F)
+ref=ref%>%rename("id"=V4)%>%rename("hgnc"=V13)%>%
+  mutate(V2=as.numeric(V2))%>%
+  mutate(V3=as.numeric(V3))%>%
+  mutate("refpos"=ifelse(V6=="+",V3-1,V2))%>%select("id","hgnc","refpos")
+
+#
+cps.ref=cps.ref%>%inner_join(ref,by="id")
+
+cps.ref%>%summarise(n_distinct(hgnc))
+cps.ref%>%summarise(n_distinct(id))
+cps.ref=cps.ref%>%rename(cpsNo=CPSid)%>%unite("CPSid",c(V1,V2),sep=":",remove = F)#%>%summarise(n_distinct(CPSid))
+head(cps.ref)
+cps.ref=cps.ref%>%rename(refpos=refpos.y)%>%select(-refpos.x)
+cps.ref=cps.ref%>%select(-V3)
+cps.ref=cps.ref%>%mutate(relpos=V2-refpos)%>%mutate(relpos=ifelse(V6=="+",relpos,-relpos))
+colnames(cps.ref)=c("CPSid","chr","CPSpos","id","readcount","strand","cpsNo","hgnc","refpos","relpos")
+RATIO=cps.ref%>%ungroup()%>%arrange(hgnc,CPSid,abs(relpos))%>%
+  distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%
+  group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))
+cps.ref=cps.ref%>%
+  ungroup()%>%inner_join(RATIO%>%select(CPSid,ratio),by="CPSid")
+cps.ref=cps.ref%>%filter(hgnc.x ==hgnc.y)%>%select(-hgnc.y)%>%rename(hgnc=hgnc.x)
+cps.ref=cps.ref%>%rename(cps.ratio.perhgnc=ratio)
+```
+
+Statistics
+```{R}
+cat("total hgnc : ",cps.ref%>%summarise(n_distinct(hgnc))%>%unlist())
+cat("total CPSid : ", cps.ref%>%ungroup()%>%summarise(n_distinct(CPSid))%>%unlist())
+cat("total id : ", cps.ref%>%ungroup()%>%summarise(n_distinct(id))%>%unlist())
+cat("number of genes with a single CPS",cps.ref%>%group_by(hgnc)%>%summarise(t=n_distinct(CPSid))%>%
+  group_by(t)%>%
+  filter(t==1)%>%nrow() )
+
+4909/10367
+
+cat("number of genes with multiple CPS",10367-4909 )
+cps.ref%>%group_by(hgnc)%>%summarise(t=n_distinct(CPSid))%>%
+  group_by(t)%>%
+  filter(t>=2)%>%nrow()
+5458/10367
+cat("Number of CPSs within 10bp window of Ref PAS")
+cps.ref%>%
+  filter(abs(relpos)<10)%>%
+  distinct_at(vars(CPSid))%>%
+  nrow()
+cps.ref%>%
+  filter(abs(relpos)<20)%>%
+  distinct_at(vars(hgnc))%>%
+  nrow()
+10607/26000#20bpwindow
+9199/26000#10bpwindow.
+22406/42882
+cat("Number of the genes with a predominant 3p-seq peak")
+cps.ref%>%arrange(hgnc,CPSid)%>%distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))%>%filter(ratio>=0.8&ratio<=1)%>%ungroup()%>%
+  summarise(t=n_distinct(hgnc))
+
+cat("numer of genes with a predominant PAS out of genes with multiple CPS : ",1471)
+cps.ref%>%arrange(hgnc,CPSid)%>%distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))%>%filter(ratio>=0.8&ratio<1)%>%ungroup()%>%
+  summarise(t=n_distinct(hgnc))
+
+
+cat("Number of genes with multiple CPSs : ",7181)
+cps.ref%>%arrange(hgnc,CPSid)%>%distinct_at(vars(hgnc,CPSid),.keep_all = T)%>%
+  ungroup()%>%
+  filter(cps.ratio.perhgnc<1)%>%
+  summarise(t=n_distinct(hgnc))
+
+
+```
+
+
+Save the table.
+```{R}
+#write.table(cps.ref,"final.35196cps.in.last.exon.300bp.ext.txt",col.names = T,row.names = F,sep="\t",quote=F)
+#write.table(cps.ref%>%group_by(hgnc)%>%mutate(ratio=readcount/sum(readcount))%>%filter(ratio>0.00)%>%summarise(CPS_Number=n_distinct(CPSid))%>%group_by(CPS_Number)%>%summarise(Genecounts=n()),"final.36809cps.CPScountpergene summary.txt",col.names = T,row.names = F,sep="\t",quote=F)
+```
+
+```{R}
+#cps.ref<-read.table("final.36809cps.in.last.exon.1kb.ext.txt",header=T, stringsAsFactors = F)
+```
