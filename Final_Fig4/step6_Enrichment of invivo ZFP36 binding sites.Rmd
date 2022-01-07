@@ -1,0 +1,200 @@
+---
+title: "Step6_ZFP36 binding site comparison between clusters"
+author: "Yeonui+Kwak"
+date: "8/15/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig4/Rcode/step6")
+
+```
+2.Load the required packages,and set up colorcode.
+```{r}
+library(updateR)
+library(RColorBrewer)
+#nstall.packages("raster")
+library(dplyr)
+library(raster)
+#library(tidyverse)
+
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+
+
+```{R}
+cl<-read.table("9cluster.txt",header=T,stringsAsFactors = F)
+nrow(cl)
+
+rbp<-read.table("tmp2.txt",stringsAsFactors = F,header=F)
+head(rbp)
+str(rbp)
+
+rbp=rbp%>%select(V5,V6,V10)%>%rename(region=V5,hgnc=V6,rc=V10)%>%filter(region=="3'utr")
+
+final=left_join(cl,rbp,by="hgnc")%>%mutate(newcl=factor(newcl))%>%mutate(rc = replace_na(rc, 0))%>%group_by(PASid,newcl,hgnc)%>%summarise(rc=sum(rc))#%>%filter(rc!=0)
+final%>%filter(newcl==4&rc!=0)
+```
+
+
+
+
+```{r}
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(9)[c(1:9)] 
+#col = yk.col(5)[c(1,2,4,5)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(0, 30) +
+  ylab("Cumulative fraction")
+
+pdf("PAL_CLIP_ZFP36 invivoBS.pdf",width=3.5,height=2.7)
+cdf_common +
+  stat_ecdf(data = final,
+            aes(x = rc,
+                col = newcl),
+            geom = "step") +
+  labs( title =expression("PAL-CLIP ZFP36 " ),color =expression("PAL cluster")) +
+  xlab("n(ZFP36 binding)")
+dev.off()
+
+stat=final%>%group_by(newcl)%>%summarise(mean=mean(rc),sd=sd(rc))
+pdf("ZFP36 binding sites_PAL-CLIP_PAL cluster.pdf",width=4.5,height=2.4)
+ggplot(stat,aes(x=newcl,y=mean,fill=mean))+geom_bar(stat="identity")+geom_errorbar(data=stat,aes(ymin=mean,ymax=mean+sd),width = 0.2)+theme_bw()+
+scale_fill_gradientn(name="PAL cluster",colors=yk.col(100)) +#ylim(c(0,50))+
+  xlab("ZFP36 PAL-CLIP")
+dev.off()
+
+wil
+wilcox.test(final%>%ungroup()%>%filter(newcl==4)%>%select(rc)%>%unlist,final%>%ungroup()%>%filter(newcl!=4)%>%select(rc)%>%unlist)
+
+
+```
+
+
+
+Mouse HITS-CLIP
+
+
+```{R}
+
+MM<-read.table("tmp.txt",header=T,stringsAsFactors = F,sep="\t")
+musGenes <- MM$Gene_name
+
+require("biomaRt")
+human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+
+genesV2 = getLDS(attributes = c("mgi_symbol"), filters = "mgi_symbol", values = musGenes, mart = mouse, attributesL = c("hgnc_symbol"), martL = human, uniqueRows=T)
+head(genesV2)
+
+MM=MM%>%inner_join(genesV2%>%rename(Gene_name=MGI.symbol),by="Gene_name")
+head(MM)
+final=cl%>%left_join(MM%>%rename(hgnc=HGNC.symbol)%>%filter(Gene_name!="<NA>"),by="hgnc")%>%ungroup()%>%mutate(PH = replace_na(PH, 0))%>%distinct()%>%group_by(hgnc,newcl,PASid)#%>%summarise(PH=sum(PH))%>%ungroup()%>%mutate(newcl=factor(newcl))
+final%>%filter(hgnc=="TNF")
+```
+
+
+
+```{R}
+cdf_common = ggplot() +
+  #scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(0, 150) +
+  ylab("Cumulative fraction")
+
+
+pdf("HITS_CLIP_ZFP36_invivoBS.pdf",width=4,height=3)
+cdf_common +
+  stat_ecdf(data = final,
+            aes(x = PH,
+                col = as.factor(newcl)),
+            geom = "step") +  scale_color_manual(values =yk.col(20)[c(1,2,3,20,15,10,4,5,6)]) +
+  labs( title =expression("ZFP36 HITS-CLIP targets (CD4+ T cells upon activation 4h)" ),color =expression("PAL cluster")) +
+  xlab("n(ZFP36 binding)")
+dev.off()
+
+stat=final%>%ungroup()%>%group_by(newcl)%>%summarise(mean=mean(PH),sd=sd(PH))
+
+pdf("ZFP36 binding sites_HITS-CLIP_PAL cluster.pdf",width=4.5,height=2.5)
+ggplot(stat,aes(x=newcl,y=mean,fill=mean))+geom_bar(stat="identity")+geom_errorbar(data=stat,aes(ymin=mean,ymax=mean+sd),width = 0.2)+theme_bw()+
+scale_fill_gradientn(name="mean(readcount)±sd",colors=yk.col(100)) +#ylim(c(0,50))+
+  labs(title="ZFP36 HITS-CLIP")+xlab("PAL cluster")
+dev.off()
+
+
+final1=as.data.frame(final)%>%filter(newcl %in% c(4))
+final2=as.data.frame(final)%>%filter(!(newcl %in% c(4)))
+wilcox.test(final1$PH,final2$PH)
+
+```
+
+
+
+#NAR_BMDM_ZFP36
+
+
+```{R}
+rbs<-read.table("NAR_BMDM_CLIP-seq_ZFP36 bindingsites.txt",stringsAsFactors = F,header=T,sep="\t")
+musGenes <- rbs$gene_name
+
+require("biomaRt")
+human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+
+genesV2 = getLDS(attributes = c("mgi_symbol"), filters = "mgi_symbol", values = musGenes, mart = mouse, attributesL = c("hgnc_symbol"), martL = human, uniqueRows=T)
+head(genesV2)
+
+str(rbs)
+rbs=rbs%>%inner_join(genesV2%>%rename(gene_name=MGI.symbol),by="gene_name")
+rbs=as.tibble(rbs)%>%dplyr::select(gene_name,extended_value_15nt..unknown_counts.,HGNC.symbol)%>%rename(hgnc=HGNC.symbol,readcount=`extended_value_15nt..unknown_counts.`)%>%filter(gene_name!="<NA>")
+
+final=cl%>%left_join(rbs,by="hgnc")%>%ungroup()%>%mutate(readcount = replace_na(readcount, 0))%>%distinct()%>%mutate(readcount=ifelse(readcount<0,-1*readcount,readcount))
+
+
+cdf_common = ggplot() +
+  #scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(0, 150) +
+  ylab("Cumulative fraction")
+
+
+pdf("iCLIP_ZFP36_invivoBS.pdf",width=4,height=3)
+cdf_common +
+  stat_ecdf(data = final,
+            aes(x = readcount,
+                col = as.factor(newcl)),
+            geom = "step") +  scale_color_manual(values =yk.col(20)[c(1,2,3,20,15,10,4,5,6)]) +
+  labs( title =expression("ZFP36 iCLIP targets (BMDM upon LPS 1h)" ),color =expression("PAL cluster")) +
+  xlab("n(ZFP36 binding)")
+dev.off()
+
+stat=final%>%ungroup()%>%group_by(newcl)%>%summarise(mean=mean(readcount),sd=sd(readcount))
+
+pdf("ZFP36 iCLIP targets (BMDM upon LPS 1h)_PAL cluster.pdf",width=4.5,height=2.5)
+ggplot(stat,aes(x=newcl,y=mean,fill=mean))+geom_bar(stat="identity")+geom_errorbar(data=stat,aes(ymin=mean,ymax=mean+sd),width = 0.2)+theme_bw()+
+scale_fill_gradientn(name="mean(readcount)±sd",colors=yk.col(100)) +#ylim(c(0,50))+
+  labs(title="ZFP36 iCLIP targets (BMDM upon LPS 1h)")+xlab("PAL cluster")
+dev.off()
+````

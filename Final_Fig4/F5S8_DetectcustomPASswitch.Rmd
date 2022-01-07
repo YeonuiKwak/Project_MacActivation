@@ -1,0 +1,514 @@
+---
+title: "F5S0"
+author: "Yeonui+Kwak"
+date: "6/15/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig5/Tmp8")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+2. Load the required libraries.
+```{R}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gridExtra)
+#source("scatterPlot.R")
+```
+
+
+Spike-in Reference.
+#normalize by spike-in
+ted$rep1_0=ted$rep1_0+13
+ted$rep1_1=ted$rep1_1+15
+ted$rep1_2=ted$rep1_2+13
+ted$rep1_4=ted$rep1_4+19
+ted$rep2_0=ted$rep2_0+16
+ted$rep2_1=ted$rep2_1+13
+ted$rep2_2=ted$rep2_2+12
+ted$rep2_4=ted$rep2_4+8
+ted=as_tibble(ted)
+
+
+3.Statistical Test to identify genes with Significant PAL changes.
+3.1 Load the TED-seq position matrix
+```{r}
+t0<-read.csv("tedseq.custom.rep1.0hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t1<-read.csv("tedseq.custom.rep1.1hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2<-read.csv("tedseq.custom.rep1.2hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t4<-read.csv("tedseq.custom.rep1.4hr.txt",sep="\t",header=F, stringsAsFactors = F)
+nrow(t0)
+```
+3.1 Load the TED-seq position matrix
+```{r}
+start=Sys.time()
+t2.0<-read.csv("tedseq.custom.rep2.0hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2.1<-read.csv("tedseq.custom.rep2.1hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2.2<-read.csv("tedseq.custom.rep2.2hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2.4<-read.csv("tedseq.custom.rep2.4hr.txt",sep="\t",header=F, stringsAsFactors = F)
+nrow(t2.4)#this is derived from n=30649 new bed file
+end=Sys.time()
+cat("Running time for loading the files was",end-start,"mins") #2mins
+```
+
+3.2 Put four matrix to each variable.
+```{r}
+ncol(First)
+First=t0
+Second=t1
+Third=t2
+Four=t4
+```
+
+```{r}
+First=t2.0
+Second=t2.1
+Third=t2.2
+Four=t2.4
+```
+
+3.3 filter transcripts with more than 100 read counts.
+```{R}
+start=Sys.time()
+dat2=as_tibble(First);dat2$sum=rowSums(dat2[203:502])
+d0h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%
+  select(1,203:502)
+
+dat2=as_tibble(Second);dat2$sum=rowSums(dat2[203:502])
+d1h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+
+dat2=as_tibble(Third);dat2$sum=rowSums(dat2[203:502])
+d2h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+dat2=as_tibble(Four);dat2$sum=rowSums(dat2[203:502])
+d4h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+```
+
+innerjoin 0h and 4h
+```{R}
+m=list(d0h,d1h,d2h,d4h)%>%reduce(inner_join,by="V1")
+m%>%drop_na%>%nrow() #11868 isoforms. rep2:12258
+```
+
+1. Calculate median PAL, and ks.test pvalue after normalizing spike-in values.
+```{R}
+dmean=c();mean1=c();mean2=c();mean3=c();mean4=c()
+spike_first=13
+spike_second=15
+spike_third=13
+spike_fourth=19
+
+
+spike_first=16
+spike_second=13
+spike_third=12
+spike_fourth=8
+```
+
+
+
+```{R}
+for (i in 1:nrow(m)){
+  vec_1=c()
+  for (j in 1:300){
+    vec_1=c(vec_1,rep(j+spike_first,m[i,j+1]))
+  }
+  vec_2=c()
+  for (k in 1:300){
+    vec_2=c(vec_2,rep(k+spike_second, m[i,k+301]))
+  }
+  vec_3=c()
+  for (k in 1:300){
+    vec_3=c(vec_3,rep(k+spike_third, m[i,k+601]))
+  }
+  vec_4=c()
+  for (k in 1:300){
+    vec_4=c(vec_4,rep(k+spike_fourth, m[i,k+901]))
+  }
+  mean_1=mean(vec_1); mean_2=mean(vec_2);mean_3=mean(vec_3);mean_4=mean(vec_4)
+  mean1=c(mean1,mean_1)
+  mean2=c(mean2,mean_2)
+  mean3=c(mean3,mean_3)
+  mean4=c(mean4,mean_4)
+  }
+
+m$mean0h=mean1
+m$mean1h=mean2
+m$mean2h=mean3
+m$mean4h=mean4
+end=Sys.time()
+cat("Running time for loading the files was",end-start,"mins")
+```
+
+```{R}
+m=m%>%select(V1,contains("mean"))
+nrow(m)#11868 REP2:12258
+head(m)
+write.table(m,"custom.Mean.PAL.rep2.txt",quote=F,row.names = F,col.names = T,sep="\t")
+```
+scatterplot to see correlation between two biological replicates.
+ted-seq scatterplot for all timepoints.
+```{R}
+
+# Correlation scatterplots of PRO-seq data
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gridExtra)
+source("scatterPlot.R")
+```
+3.Load the data
+```{R}
+pal1<-read.table("custom.Mean.PAL.rep1.txt",header=T, stringsAsFactors = F)
+colnames(pal1)=c("id",paste("rep1",c(0,1,2,4),sep="_"))
+
+pal2<-read.table("custom.Mean.PAL.rep2.txt",header=T, stringsAsFactors = F)
+colnames(pal2)=c("id",paste("rep2",c(0,1,2,4),sep="_"))
+final=inner_join(pal1,pal2,by="id")
+#final<-read.table("REAL.final_PAL_data.txt",sep="\t",head=T,stringsAsFactors = F)
+final%>%drop_na()%>%nrow()#10077 
+
+```
+
+4. Draw a scatterplot between 0h and 1h.
+```{R}
+getwd()
+t=final%>% select(rep1_0,rep2_0)%>%mutate(x=rep1_0,y=rep2_0)
+cat("correlation",cor(t$x,t$y))
+t=t%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+pdf("0and0:PAL_replicates_scattorplot.pdf", width = 3, height = 3)
+ggplot(t, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=1) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="PAL.rep1.0h (nt)", y ="PAL.rep2.0h (nt)")+xlim(c(0,300))+ylim(c(0,300))#+
+  #geom_abline(slope = 1, intercept = 20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = -20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+
+  #ggtitle("TED-seq: 0h")
+dev.off()
+
+
+t=final%>% select(rep1_1,rep2_1)%>%mutate(x=rep1_1,y=rep2_1)
+cat("correlation",cor(t$x,t$y))
+t=t%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+pdf("1and1:PAL_replicates_scattorplot.pdf", width = 3, height = 3)
+ggplot(t, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=1) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="PAL.rep1.1h (nt)", y ="PAL.rep2.1h (nt)")+xlim(c(0,300))+ylim(c(0,300))#+
+  #geom_abline(slope = 1, intercept = 20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = -20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+
+  #ggtitle("TED-seq: 0h")
+dev.off()
+
+t=final%>% select(rep1_2,rep2_2)%>%mutate(x=rep1_2,y=rep2_2)
+cat("correlation",cor(t$x,t$y))
+t=t%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+pdf("2and2:PAL_replicates_scattorplot.pdf", width = 3, height = 3)
+ggplot(t, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=1) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="PAL.rep1.2h (nt)", y ="PAL.rep2.2h (nt)")+xlim(c(0,300))+ylim(c(0,300))#+
+  #geom_abline(slope = 1, intercept = 20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = -20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+
+  #ggtitle("TED-seq: 0h")
+dev.off()
+
+t=final%>% select(rep1_4,rep2_4)%>%mutate(x=rep1_4,y=rep2_4)
+cat("correlation",cor(t$x,t$y))
+t=t%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+pdf("4and4:PAL_replicates_scattorplot.pdf", width = 3, height = 3)
+ggplot(t, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=1) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="PAL.rep1.4h (nt)", y ="PAL.rep2.4h (nt)")+xlim(c(0,300))+ylim(c(0,300))#+
+  #geom_abline(slope = 1, intercept = 20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = -20,linetype="dashed")+
+  #geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+
+  #ggtitle("TED-seq: 0h")
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+Filter transcript id that don't switch
+```{R}
+nrow(final)
+custom=final%>%separate(id,c("id","refpos","chr","cpspos"),sep=":")%>%
+  mutate(refpos=as.numeric(refpos))%>%mutate(cpspos=as.numeric(cpspos))%>%
+  mutate(relpos=cpspos-refpos)
+custom%>%drop_na()%>%nrow()
+ref<-read.table("transcripts.bed13",header = F,stringsAsFactors = F)
+ref=ref%>%select(V4,V6,V13)
+ref=ref%>%rename(id=V4)
+custom%>%inner_join(ref,by="id")%>%nrow()
+custom=custom%>%inner_join(ref,by="id")%>%rename(strand=V6)%>%rename(hgnc=V13)%>%
+  mutate(relpos=ifelse(strand=="+",relpos,-relpos))
+custom%>%select(hgnc)%>%arrange(hgnc)%>%distinct()%>%nrow() #5356 genes!
+####decrease in the number of isoforms in the step below.
+ref<-read.table("transcript.reference.ALE.Tandem.annotation.txt",header=T,stringsAsFactors = F)
+custom=custom%>%inner_join(ref%>%select(id,ALE,Tandem,ALEpos),by="id")
+write.table(custom,"custom.n10777.6.15.2020.final.PAL.table.txt",col.names = T,row.names = F,quote=F,sep="\t")
+
+custom%>%filter(hgnc=="SPSB1")
+custom%>%summarise(n_distinct(hgnc))
+nrow(custom)
+```
+
+
+1)Annotate new tandem index to each isoform
+2)Define newid == id:CPSpos.
+```{R}
+l=custom%>%group_by(hgnc,ALE)%>%distinct_at(vars(cpspos),.keep_all = T)%>%
+  mutate(Tandem2=ifelse(strand=="+",rank(cpspos),rank(-cpspos)))%>%
+  unite("newid",c(hgnc,ALE,cpspos),sep=":")%>%select(newid, Tandem2)%>%ungroup()
+
+custom2=custom%>%unite("newid",c(hgnc,ALE,cpspos),sep=":")%>%inner_join(l,by="newid")%>%separate(newid,c("hgnc","ALE","cpspos"),sep=":")
+tmp=custom2%>%unite("newid",c(id,cpspos),sep=":")
+```
+
+2. Define function named 'distance.test'.
+Purpose: When tandem 3'UTR is within 300 nt windows from each other, we will define locally clustered isoforms as a local tandem cluster by assigning tandem cluster index.
+To exclude the possibility that tandem 3'UTR switch upon LPS stimulation can make a bias in poly(A) tail length/
+
+
+```{R}
+distance.test=function(cps=cpspos,id=Tandem2){
+  table=data.frame("cps"=cps,"id"=id)
+  index=rep(NA,nrow(table))
+  prev=1
+  nex=prev+1
+  index[prev]=prev
+  while(prev<nrow(table)&nex<=nrow(table)){
+    if(abs(table[prev,1]-table[nex,1])<300){
+      index[nex]=prev
+      nex=nex+1
+    }
+    else{
+          prev=nex
+          index[prev]=prev
+          nex=prev+1
+        }
+      #index=c(index,prev)
+      }
+  return(str_replace_all(paste(paste(index,id, sep=":"),",",collapse =""), fixed(" "), ""))
+}
+```
+3)Define local tandem cluster.
+```{R}
+#result=#
+id=tmp%>%select(newid,refpos,hgnc,strand,ALE,ALEpos,Tandem2)%>%separate(newid,c("id","cpspos"),sep=":",remove = F)%>%mutate(cpspos=as.numeric(cpspos))%>%arrange(hgnc,ALE)
+newCPSid=id%>%group_by(hgnc,ALE)%>%summarise(t=distance.test(cps=cpspos,id=Tandem2))%>%
+  separate_rows(t,sep=",")%>%filter(t!="")%>%unite("hgnc:ALE:tandemClsuter:tandemid",c(hgnc,ALE,t),sep=":")%>%separate(`hgnc:ALE:tandemClsuter:tandemid`,c("hgnc","ALE","tandemCluster","tandemid"),sep=":")%>%unite("hgnc:ALE:tandemid",c(hgnc,ALE,tandemid),sep=":")
+cat("without multiple cps within 300 nucleotides.")
+```
+
+4) Using temporal 3p-seq readcount table, test PAS switching withtin a local tandem cluster.
+```{R}
+#assign tandem cluster id for each PAS isoform.
+id=id%>%unite("hgnc:ALE:tandemid",c(hgnc,ALE,Tandem2),sep=":")%>%inner_join(newCPSid, by="hgnc:ALE:tandemid")
+#load temporal dynamics of 3p-seq read counts for each PAS isoform
+ratio<-read.table("3pseq.all.temporalCPSsamples.ALE.tandemUTR.annotation.2020.06.15.txt",header=T,stringsAsFactors = F)
+head(ratio)
+ratio=ratio%>%
+  separate(CPSid,c("chr","CPSpos"),sep=":",remove = F)%>%
+  unite("newid",c(id,CPSpos),sep=":")%>%select(newid,time,mean.rc,ratio)
+id=id%>%inner_join(ratio,"newid")
+nrow(id)
+id=id%>%separate(`hgnc:ALE:tandemid`,c("hgnc","ALE","tandemid"),sep=":")%>%unite("cluster",c(hgnc,ALE,tandemCluster),sep=":")
+write.table(id,"temporal3pseq_allCPS.ALE.tandem.tandemcluster.txt",col.names = T,row.names = F,sep="\t",quote=F)
+tmp.final=tmp%>%gather("sample","pal",contains("rep"))%>%separate(sample,c("rep","time"),sep="_")%>%group_by(newid,refpos,chr,hgnc,ALE,relpos,strand,Tandem2,ALEpos,time)%>%summarise(mean.pal=mean(pal))%>%ungroup()%>%unite("newid:time",c(newid,time),sep="_")%>%inner_join(id%>%unite("newid:time",c(newid,time),sep="_")%>%select(`newid:time`,mean.rc,cpspos,cluster,tandemid),by="newid:time")%>%ungroup()%>%separate(`newid:time`,c("newid","time"),sep="_")%>%arrange(hgnc,chr,strand,newid,ALE,ALEpos,Tandem2,tandemid,cluster,cpspos,refpos,relpos,time,mean.rc,mean.pal)%>%select(hgnc,chr,strand,newid,ALE,ALEpos,tandemid,cluster,cpspos,refpos,relpos,time,mean.rc,mean.pal)
+tmp.final%>%filter(hgnc=="TNF")
+write.table(tmp.final,"custom.CPS.clusterid.PAL.RNA.txt",col.names = T,row.names = F,sep="\t",quote=F)
+#tmp2%>%group_by(hgnc,ALE)%>%summarise(vector=str_replace_all(paste(cpspos, collapse=","),fixed(" "), ""))
+```
+
+#tandem 3'UTR switch 
+```{R}
+id.multiple.tandem=id%>%group_by(cluster)%>%summarise(t=n_distinct(tandemid))%>%filter(t>1)%>%inner_join(id,by="cluster")
+#final.tmp=final%>%filter(time%in%c(0,1,2,4))
+timelist=list(c(0,1),c(1,2),c(0,2),c(2,4),c(1,4),c(0,4))
+result=list()
+for ( i in 1:6){
+ final.tmp=id.multiple.tandem%>%filter(time%in%timelist[[i]]) 
+
+cr.pv = final.tmp %>%
+	ungroup() %>%
+	group_by(cluster) %>%
+	summarise(pval = diffCPS.test(tandemid,time,mean.rc))
+
+cr.pv = cr.pv %>%
+	mutate(fdr = p.adjust(pval, method = "fdr")) %>%
+	mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+	mutate(fdr = ifelse(is.na(fdr), 1, fdr))
+
+cr.pv2 = final.tmp %>%
+	ungroup() %>%
+	group_by(cluster) %>%
+	summarise(pcor = TSI.cor.test(tandemid,time, mean.rc))
+
+cr.pv=cr.pv%>%inner_join(cr.pv2,by="cluster")#%>%inner_join(cr.pv3, by="hgnc")
+
+cr.pv=cr.pv%>%filter_all(all_vars(!is.nan(.)))
+result[[i]]<-cr.pv
+}
+time=c("0-1h","1-2h","0-2h","2-4h","1-4h","0-4h")
+for (i in 1:6){
+ result[[i]]=result[[i]]%>%mutate(type=rep(time[i]) )
+}
+
+final=result%>%reduce(bind_rows)
+```
+
+
+```{R}
+#Gene list with local PAL switch.
+write.table(final%>%
+  filter(fdr<0.05)%>%
+  filter(abs(pcor)>0.1)%>%inner_join(id.multiple.tandem,by="cluster")%>%select(cluster)%>%separate(cluster,c("hgnc","ale","tandemcluster"),sep=":")%>%select(hgnc)%>%arrange(hgnc)%>%distinct(),"hgnc with local tandem switch.txt",col.names = T,row.names = F,quote=F)
+
+#ALL TEST RESULT.
+write.table(final,"local_tandemUTRswitch.chisqure.test.result.txt",col.names = T,row.names = F,quote=F )
+final%>%
+  filter(fdr<0.05)%>%
+  filter(abs(pcor)>0.1)%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(cor)%>%select(cluster,cor,type)%>%distinct()#summarise(n_distinct(hgnc)) 
+
+
+cat("number of hgnc:ALE with switch in tandem3'UTR")
+final%>%filter(fdr<0.05)%>%filter(abs(pcor)>0.1)%>%ungroup()%>%summarise(n_distinct(cluster)) #27
+final%>%filter(fdr<0.05)%>%filter(abs(pcor)>0.1)%>%ungroup()%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(cor)%>%summarise(n_distinct(cluster)) #distal:21,proximal:7
+final%>%filter(fdr<0.05)%>%filter(abs(pcor)>0.1)%>%ungroup()%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%distinct()
+write.table(final%>%
+  filter(fdr<0.05)%>%
+  filter(abs(pcor)>0.1)%>%mutate(cor=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(cor)%>%select(cluster,cor,type,pval,pcor)%>%distinct(),"tandemUTRswitch.chisqure.test.result_passed.txt",col.names = T,row.names = F,quote=F )
+
+
+
+t=final%>%group_by(type)%>%filter(fdr<0.05)%>%filter(abs(pcor)>0.1)%>%mutate(direction=ifelse(pcor>0.1,"distal","proximal"))%>%group_by(type,direction)%>%summarise(significant=n())
+t[10,]=c("1-2h","distal",0)
+#t[10,]=c("2-4h","distal",0)
+t=t%>%ungroup()%>%complete(type,nesting(direction),fill =list(significant=0))%>%mutate(significant=as.numeric(significant))
+pdf("hgnc:ALE_localtandemUTRswitch2.pdf",width=4,height=3)
+ggplot(t,aes(x=type,y=significant,fill=direction,group=direction))+
+  geom_bar(stat="identity")+theme_bw()+xlab("Comparison")+
+  scale_fill_manual(values=c("red","blue"))+
+theme_bw()+ylab("Number of tandem 3'UTR shift")+xlab("Comparison")
+#geom_col(position = position_dodge2(preserve = "single")) 
+#scale_fill_manual(values=yk.col(5)[c(4,2)])
+dev.off()
+```
+Filtering tandem clusters with PAL switch.
+```{R}
+PAL.switch.list=final%>%filter(fdr<0.05)%>%filter(abs(pcor)>0.1)%>%ungroup()%>%select(cluster)%>%distinct()
+
+final.custom=tmp%>%select(hgnc,newid,refpos,ALE,contains("rep"),relpos,strand,Tandem2,ALEpos)%>%inner_join(id%>%select(newid,cluster,cpspos)%>%arrange(newid,cluster)%>%distinct(),by="newid")
+final.custom=final.custom%>%filter(!(cluster %in% PAL.switch.list$cluster))
+nrow(final.custom)
+tmp%>%select(hgnc)%>%arrange(hgnc)%>%distinct%>%nrow()
+cat("final PAS isoforms withtout local PAS switching tandem cluster:", nrow(final.custom))
+cat("final PAS isoforms withtout local PAS switching tandem cluster:", nrow(final.custom)) 
+final.custom%>%separate(cluster,c("hgnc","ale","tandemcluster"),sep=":")%>%summarise(n_distinct(hgnc))
+write.table(final.custom,"custom.PAL.table.afterremovinglocalPALswitch.txt",sep="\t",col.names=T,row.names = F,quote = F)
+```
+
+
+Additional removal of PAS sharing the same TED-seq distribution.
+
+
+2. Define function named 'distance.test'.
+Purpose: When tandem 3'UTR is within 300 nt windows from each other, we will exclude isoforms with minor frequency.
+Because it can cause bias that distal tandem UTR always have longer poly(A) because they calculate poly(A) tail length based on the same TED-seq distribution.
+
+```{R}
+distance.test=function(cps=cpspos,ratio=cps.ratio.perhgnc,id=Tandem2){
+  table=data.frame("cps"=cps,"ratio"=ratio,"id"=id)
+  index=c()
+  prev=1
+  nex=prev+1
+  while(prev<nrow(table)&nex<=nrow(table)){
+    if(abs(table[prev,1]-table[nex,1])<300){
+        if(table[prev,2]>table[nex,2]){
+         nex=nex+1 
+        }
+        else{
+          prev=nex
+          nex=nex+1
+        }
+      #index=c(index,prev)
+      }
+    else{
+      index=c(index,table[prev,3])
+    prev=nex
+    }
+  }
+  index=c(index,table[prev,3])
+  return(str_replace_all(paste(index,",",collapse =""), fixed(" "), ""))
+}
+```
+3. Use the above function, and leave PAL info for non-overlapping PAS isoforms without nearby PAS.
+```{R}
+#result=#
+PAL.switch.list
+id<-read.table("temporal3pseq_allCPS.ALE.tandem.tandemcluster.txt",header=T,stringsAsFactors = F)
+#id.multiple.tandem=id%>%group_by(cluster)%>%summarise(t=n_distinct(tandemid))%>%filter(t>1)%>%inner_join(id,by="cluster")
+id.tmp=id%>%filter(!(cluster%in%PAL.switch.list$cluster))%>%separate(cluster,c("hgnc","ALE","tandemcluster"),sep=":")
+
+newCPSid=id.tmp%>%group_by(hgnc,ALE)%>%summarise(t=distance.test(cps=cpspos,ratio=ratio,id=tandemid))%>%
+  separate_rows(t,sep=",")%>%filter(t!="")%>%unite("hgnc:ALE:tandem",c(hgnc,ALE,t),sep=":")
+cat("without multiple cps within 300 nucleotides.",6719)
+final=id.tmp%>%unite("hgnc:ALE:tandem",c(hgnc,ALE,tandemid),sep=":")%>%inner_join(newCPSid, by="hgnc:ALE:tandem")
+final.custom%>%filter(newid %in% final$newid)%>%nrow() #6719
+final.custom%>%filter(newid %in% final$newid)%>%arrange(hgnc)%>%summarise(n_distinct(hgnc))#5338
+write.table(final.custom%>%filter(newid %in% final$newid),"custom.PAL.table.afterRemovinglocalPALswitch.withoutnearbyPAS.txt",col.names = T,row.names = F,sep="\t",quote=F)
+final.custom%>%filter(newid %in% final$newid)%>%filter(hgnc=="TNF")
+#tmp2%>%group_by(hgnc,ALE)%>%summarise(vector=str_replace_all(paste(cpspos, collapse=","),fixed(" "), ""))
+```
+
+
+

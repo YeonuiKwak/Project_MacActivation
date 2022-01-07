@@ -1,0 +1,116 @@
+---
+title: 'step5: Gene ontology'
+author: "Yeonui+Kwak"
+date: "8/14/2020"
+output: html_document
+---
+
+#https://learn.gencore.bio.nyu.edu/rna-seq-analysis/gene-set-enrichment-analysis/
+1.Set a working directory
+```{R}
+setwd("/Users/yeonuikwak/Desktop/Publication_Mar/Final_Fig4/Rcode/step5")
+
+```
+2.Load the required packages,and set up colorcode.
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+#update.packages("dplyr")
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+
+#BiocManager::install("ComplexHeatmap")
+library(ComplexHeatmap)
+### Heatmap with Annotation
+library(dendextend)
+library("circlize")
+library("RColorBrewer")
+library(cluster)    # clustering algorithms
+library(factoextra)
+
+
+
+
+#BiocManager::install(version = '3.8')
+#BiocManager::install("clusterProfiler", version = "3.8")
+#BiocManager::install("pathview")
+#BiocManager::install("enrichplot")
+
+#install.packages("dplyr")
+install_version("dplyr", version = "0.8.5", repos = "http://cran.us.r-project.org")
+library(clusterProfiler)
+library(enrichplot)
+# we use ggplot2 to add x axis labels (ex: ridgeplot)
+library(ggplot2)
+
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+Annotations
+See all annotations available here: http://bioconductor.org/packages/release/BiocViews.html#___OrgDb (there are 19 presently available).
+```{R}
+# SET THE DESIRED ORGANISM HERE
+organism = "org.Hs.eg.db"
+BiocManager::install(organism, character.only = TRUE)
+library(organism, character.only = TRUE)
+```
+
+Prepare Input
+```{R}
+# reading in data from deseq2
+df = read.table("paldynamics.cl4.txt", header=F)
+df$dummyfc=1
+
+# we want the log2 fold change 
+original_gene_list =df$dummyfc
+#original_gene_list <- df$log2FoldChange
+
+# name the vector
+names(original_gene_list) <- df$V1
+#names(original_gene_list) <- df$X
+
+# omit any NA values 
+gene_list<-na.omit(original_gene_list)
+
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+```
+Gene set enrichment
+
+```{R}
+gseG
+gse <- gseGO(geneList=gene_list, 
+             ont ="ALL", 
+             keyType = "ENSEMBL", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism, 
+             pAdjustMethod = "fdr")
+
+
+```
+
+
+```{r}
+
+#dotplot
+require(DOSE)
+dotplot(gse, showCategory=10, split=".sign") + facet_grid(.~.sign)
+
+#enrichment map
+emapplot(gse, showCategory = 10)
+
+
+```

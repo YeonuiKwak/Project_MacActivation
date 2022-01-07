@@ -1,0 +1,124 @@
+---
+title: "Step4: PAL temporal dynamics"
+author: "Yeonui+Kwak"
+date: "8/13/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("/Users/yeonuikwak/Desktop/Publication_Mar/Final_Fig4/Rcode/step7_PROseq")
+
+```
+2.Load the required packages,and set up colorcode.
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+
+#BiocManager::install("ComplexHeatmap")
+library(ComplexHeatmap)
+### Heatmap with Annotation
+library(dendextend)
+library("circlize")
+library("RColorBrewer")
+library(cluster)    # clustering algorithms
+library(factoextra)
+
+
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+
+```{r}
+highly_Var<-read.table("9cluster.txt",stringsAsFactors = F,header=T)
+colnames(highly_Var)[3:6]=c(0,1,2,4)
+proseq<-read.table("PRO_TED_CPS.readcounttable.txt",stringsAsFactors = F,header=T)
+head(proseq)
+head(highly_Var)
+tmp=highly_Var%>%inner_join(proseq%>%select(hgnc,contains("PRO")),by="hgnc")%>%
+  group_by(PASid,hgnc,newcl,`0`,`1`,`2`,`4`)%>%summarise(PRO0=mean(PRO_0)-mean(PRO_0),PRO1=mean(PRO_1)-mean(PRO_0),PRO2=mean(PRO_2)-mean(PRO_0),PRO4=mean(PRO_4)-mean(PRO_0))
+tmp=tmp%>%ungroup()%>%select(PRO0,PRO1,PRO2,PRO4,hgnc,newcl,PASid)
+tmp%>%filter(hgnc=="AAGAB")
+ha = HeatmapAnnotation(df = data.frame(TimeuponLPS= as.factor(c(0,1,2,4))))
+pdf("Fig5_TXNdynamics_n1520.pdf",height=6,width=4)
+Heatmap(tmp[,1:4], name = "PRO-seq, Log2(RPKM[sample/0h])", 
+        show_row_names = F,cluster_columns = F,show_column_names = TRUE,  split=tmp$newcl,col= circlize::colorRamp2(seq(-2,2,0.2), yk.col(21)))
+dev.off()
+
+
+tmp=tmp%>%rename(`0`=PRO0,`1`=PRO1,`2`=PRO2,`4`=PRO4)
+pdf("F5_TXNdynamicsBYcluster_n1520_linecol8_2.pdf",height=8,width=2.5)
+tmp2=tmp%>%gather("time","txn",-PASid,-newcl,-hgnc)%>%
+  mutate(time=as.numeric(time))%>%group_by(PASid)%>%ungroup()
+ggplot(tmp2,aes(time,txn))+
+  geom_line(aes(col=as.factor(newcl),group=PASid,alpha=0.2))+facet_grid(newcl~.,scales="fixed",switch="both")+
+  geom_line(stat = 'summary', fun = 'mean', size = .5, color = 'black',linetype="dashed") +
+  ylab("TXN")+
+  scale_color_manual(values =yk.col(9),name = "Cluster" )+theme(strip.text = element_text(size=12))+theme(legend.position = "none")+ylim(c(-5,5))+
+  theme_bw()
+dev.off()
+nrow(highly_Var)
+```
+
+
+```{r}
+highly_Var<-read.table("9cluster.txt",stringsAsFactors = F,header=T)
+colnames(highly_Var)[3:6]=c(0,1,2,4)
+proseq<-read.table("PRO_TED_CPS.readcounttable.txt",stringsAsFactors = F,header=T)
+head(proseq)
+head(highly_Var)
+tmp=highly_Var%>%inner_join(proseq%>%select(hgnc,contains("CPS")),by="hgnc")%>%
+  group_by(PASid,hgnc,newcl,`0`,`1`,`2`,`4`)%>%summarise(PRO0=log2(mean(CPS_0)/mean(CPS_0)),PRO1=log2(mean(CPS_1)/mean(CPS_0)),PRO2=log2(mean(CPS_2)/mean(CPS_0)),PRO4=log2(mean(CPS_4)/mean(CPS_0)))
+tmp=tmp%>%ungroup()%>%select(PRO0,PRO1,PRO2,PRO4,hgnc,newcl,PASid)
+tmp%>%filter(hgnc=="AAGAB")
+ha = HeatmapAnnotation(df = data.frame(TimeuponLPS= as.factor(c(0,1,2,4))))
+pdf("Fig5_TXNdynamics_n1520.pdf",height=6,width=4)
+Heatmap(tmp[,1:4], name = "PRO-seq, Log2(RPKM[sample/0h])", 
+        show_row_names = F,cluster_columns = F,show_column_names = TRUE,  split=tmp$newcl,col= circlize::colorRamp2(seq(-2,2,0.2), yk.col(21)))
+dev.off()
+
+
+tmp=tmp%>%rename(`0`=PRO0,`1`=PRO1,`2`=PRO2,`4`=PRO4)
+pdf("F5_RNAdynamicsBYcluster_n1520_linecol8_2.pdf",height=8,width=2.5)
+tmp2=tmp%>%gather("time","txn",-PASid,-newcl,-hgnc)%>%
+  mutate(time=as.numeric(time))%>%group_by(PASid)%>%ungroup()
+ggplot(tmp2,aes(time,txn))+
+  geom_line(aes(col=as.factor(newcl),group=PASid,alpha=0.2))+facet_grid(newcl~.,scales="fixed",switch="both")+
+  geom_line(stat = 'summary', fun = 'mean', size = .5, color = 'black',linetype="dashed") +
+  ylab("RNA (log2 FC)")+
+  scale_color_manual(values =yk.col(9),name = "Cluster" )+theme(strip.text = element_text(size=12))+theme(legend.position = "none")+#ylim(c(-5,5))+
+  theme_bw()
+dev.off()
+nrow(highly_Var)
+```
+
+
+
+
+
+
+Enlarge the cluster 5,6,7
+```{R}
+subset=highly_Var%>%filter(newcl%in%c(4,5,6))
+subset=subset%>%arrange(hgnc)%>%group_by(hgnc)%>%mutate(index=row_number())%>%unite("newhgnc",c(hgnc,index),sep=": ")
+t=subset[,3:6]
+rownames(t)=subset$newhgnc
+pdf("cluster4.5.6.pdf",height=15,width=6)
+Heatmap(t, name = "PAL-meanPAL", 
+        show_row_names = T,cluster_columns = F, show_column_names = TRUE,  split=subset$newcl,col= circlize::colorRamp2(seq(-20,20,5), yk.col(9)))
+dev.off()
+
+```
+

@@ -1,0 +1,584 @@
+---
+title: "F5S8: ks.test and count the number of genes with PAL changes.:new transcript annotation.(6.12 .2020 ver.)"
+author: "Yeonui+Kwak"
+date: "6/12/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig5/Tmp8")
+
+```
+2.Load the required packages,and set up colorcode.
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+3. Load the files for ks.test
+Spike-in Reference.
+#normalize by spike-in
+ted$rep1_0=ted$rep1_0+13
+ted$rep1_1=ted$rep1_1+15
+ted$rep1_2=ted$rep1_2+13
+ted$rep1_4=ted$rep1_4+19
+ted$rep2_0=ted$rep2_0+16
+ted$rep2_1=ted$rep2_1+13
+ted$rep2_2=ted$rep2_2+12
+ted$rep2_4=ted$rep2_4+8
+ted=as_tibble(ted)
+
+
+3.Statistical Test to identify genes with Significant PAL changes.
+3.1 Load the TED-seq position matrix
+```{r}
+t0<-read.csv("tedseq.custom.rep1.0hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t1<-read.csv("tedseq.custom.rep1.1hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2<-read.csv("tedseq.custom.rep1.2hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t4<-read.csv("tedseq.custom.rep1.4hr.txt",sep="\t",header=F, stringsAsFactors = F)
+```
+3.1 Load the TED-seq position matrix
+```{r}
+start=Sys.time()
+t2.0<-read.csv("tedseq.custom.rep2.0hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2.1<-read.csv("tedseq.custom.rep2.1hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2.2<-read.csv("tedseq.custom.rep2.2hr.txt",sep="\t",header=F, stringsAsFactors = F)
+t2.4<-read.csv("tedseq.custom.rep2.4hr.txt",sep="\t",header=F, stringsAsFactors = F)
+end=Sys.time()
+cat("Running time for loading the files was",end-start,"mins") #2mins
+```
+
+3.2 Put four matrix to each variable.
+Rep1.
+```{r}
+ncol(First)
+First=t0
+Second=t1
+Third=t2
+Four=t4
+```
+Rep2.
+```{r}
+First=t2.0
+Second=t2.1
+Third=t2.2
+Four=t2.4
+```
+
+3.3 filter transcripts with more than 50 read counts.
+```{R}
+start=Sys.time()
+dat2=as_tibble(First);dat2$sum=rowSums(dat2[203:502])
+d0h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%
+  select(1,203:502)
+
+dat2=as_tibble(Second);dat2$sum=rowSums(dat2[203:502])
+d1h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+
+dat2=as_tibble(Third);dat2$sum=rowSums(dat2[203:502])
+d2h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+dat2=as_tibble(Four);dat2$sum=rowSums(dat2[203:502])
+d4h=dat2%>%filter(sum>50)%>%
+  select(-sum)%>%select(1,203:502)
+```
+
+innerjoin all samples.
+```{R}
+m=list(d0h,d1h,d2h,d4h)%>%reduce(inner_join,by="V1")
+m2=m%>%separate(V1,c("id","refpos","chr","cpspos"),sep=":")%>%unite("newid",c(id,refpos,cpspos),sep=":")
+head(m2)
+#filter PAS isoforms without local tandem PAS switch as well as without nearly PAS.
+head(final.pas)
+final.pas<-read.table("custom.PAL.table.afterRemovinglocalPALswitch.withoutnearbyPAS.txt",header=T,stringsAsFactors = F)
+final.pas=final.pas%>%separate(newid,c("id","cpspos"),sep=":")%>%unite("newid",c(id,refpos,cpspos),sep=":")
+m=m2%>%filter(newid %in%final.pas$newid)%>%select(-chr)
+head(m)
+```
+
+1. Calculate median PAL, and ks.test pvalue after normalizing spike-in values.
+```{R}
+#rep1
+spike_first=13
+spike_second=15
+spike_third=13
+spike_fourth=19
+
+#rep2
+spike_first=16
+spike_second=13
+spike_third=12
+spike_fourth=8
+```
+
+
+rep1
+```{R}
+start=Sys.time()
+ks.pval.1=c();ks.pval.2=c();ks.pval.3=c();ks.pval.4=c();ks.pval.5=c();ks.pval.6=c()
+dmean.1=c();dmean.2=c();dmean.3=c();dmean.4=c();dmean.5=c();dmean.6=c()
+
+for (i in 1:nrow(m)){
+  vec_1=c()
+  for (j in 1:300){
+    vec_1=c(vec_1,rep(j+spike_first,m[i,j+1]))
+  }
+  vec_2=c()
+  for (k in 1:300){
+    vec_2=c(vec_2,rep(k+spike_second, m[i,k+301]))
+  }
+  vec_3=c()
+  for (k in 1:300){
+    vec_3=c(vec_3,rep(k+spike_third, m[i,k+601]))
+  }
+  vec_4=c()
+  for (k in 1:300){
+    vec_4=c(vec_4,rep(k+spike_fourth, m[i,k+901]))
+  }
+   ks.pval.1=c(ks.pval.1,ks.test(vec_1,vec_2)$p.value)
+   ks.pval.2=c(ks.pval.2,ks.test(vec_1,vec_3)$p.value)
+   ks.pval.3=c(ks.pval.3,ks.test(vec_1,vec_4)$p.value)
+   ks.pval.4=c(ks.pval.4,ks.test(vec_2,vec_3)$p.value)
+   ks.pval.5=c(ks.pval.5,ks.test(vec_2,vec_4)$p.value)
+   ks.pval.6=c(ks.pval.6,ks.test(vec_3,vec_4)$p.value)
+   dmean.1=c(dmean.1,mean(vec_2)-mean(vec_1))
+   dmean.2=c(dmean.2,mean(vec_3)-mean(vec_1))
+   dmean.3=c(dmean.3,mean(vec_4)-mean(vec_1))
+   dmean.4=c(dmean.4,mean(vec_3)-mean(vec_2))
+   dmean.5=c(dmean.5,mean(vec_4)-mean(vec_2))
+   dmean.6=c(dmean.6,mean(vec_4)-mean(vec_3))
+}
+m$`kspval.0:1`=p.adjust(ks.pval.1,method="BH")
+m$`kspval.0:2`=p.adjust(ks.pval.2,method="BH")
+m$`kspval.0:4`=p.adjust(ks.pval.3,method="BH")
+m$`kspval.1:2`=p.adjust(ks.pval.4,method="BH")
+m$`kspval.1:4`=p.adjust(ks.pval.5,method="BH")
+m$`kspval.2:4`=p.adjust(ks.pval.6,method="BH")
+
+m$`dpal.0:1`=dmean.1
+m$`dpal.0:2`=dmean.2
+m$`dpal.0:4`=dmean.3
+m$`dpal.1:2`=dmean.4
+m$`dpal.1:4`=dmean.5
+m$`dpal.2:4`=dmean.6
+end=Sys.time()
+cat("Running time for loading the files was",end-start,"mins")
+head(final.pas)
+stat.final2=m%>%select(newid,contains("dpal"),contains("kspval"))%>%inner_join(final.pas,by="newid")
+head(stat.final2)
+write.table(stat.final,"final6086PASisoforms_stattest_meanPAL_rep1.txt",col.names = T,row.names = F,quote = F,sep="\t")
+write.table(stat.final2,"final6086PASisoforms_stattest_meanPAL_rep2.txt",col.names = T,row.names = F,quote = F,sep="\t")
+```
+
+
+```{R}
+
+rep1<-read.table("final6086PASisoforms_stattest_meanPAL_rep1.txt", header=T, stringsAsFactors = F)
+rep2<-read.table("final6086PASisoforms_stattest_meanPAL_rep2.txt", header=T, stringsAsFactors = F)
+head(rep1)
+rep1=rep1[,c(1:15,24:28)]
+rep1=rep1%>%gather(key=sample,value=value,-hgnc,-ALE,-relpos,-strand,-newid,-Tandem2,-ALEpos,-cluster)%>%separate(sample,c("test","time1","time2"),sep="\\.")%>%unite("comparison",c(time1,time2),sep=":")%>%mutate(rep=1)%>%unite("test_rep",c(test,rep),sep=":")
+#colnames(rep1)=c("newid","dpal_1.0.1","dpal_1.0.2","dpal_1.0.4","dpal_1.1.2","dpal_1.1.4","dpal_1.2.4","kspval_1.0.1","kspval_1.0.2","kspval_1.0.4","kspval_1.1.2","kspval_1.1.4","kspval_1.2.4","hgnc","ALE","relpos","strand","Tandem2","ALEpos","cluster")
+rep2=rep2[,c(1:15,24:28)]
+rep2=rep2%>%gather(key=sample,value=value,-hgnc,-ALE,-relpos,-strand,-newid,-Tandem2,-ALEpos,-cluster)%>%separate(sample,c("test","time1","time2"),sep="\\.")%>%unite("comparison",c(time1,time2),sep=":")%>%mutate(rep=2)%>%unite("test_rep",c(test,rep),sep=":")
+head(rep2)
+all=bind_rows(rep1,rep2)%>%spread(test_rep,value)
+head(all)
+```
+
+
+5. Filter genes that have PAL change using ks.test.
+```{R}
+#rep1<-read.table("0hand1hPAL_re1_t.test.txt", header=T, stringsAsFactors = F)
+#rep2<-read.table("0hand1hPAL_re2_t.test.txt", header=T, stringsAsFactors = F)
+rep1<-read.table("final6086PASisoforms_stattest_meanPAL_rep1.txt", header=T, stringsAsFactors = F)
+rep2<-read.table("final6086PASisoforms_stattest_meanPAL_rep2.txt", header=T, stringsAsFactors = F)
+head(rep1)
+rep1.pal=rep1[,c(1,16:23)]%>%mutate(rep=1)
+rep2.pal=rep2[,c(1,16:23)]%>%mutate(rep=2)
+pal.all=bind_rows(rep1.pal,rep2.pal)
+pal.all.mean=pal.all%>%gather(sample,pal,-newid,-rep)%>%separate(sample,c("replicate","time"),sep="_")%>%select(-replicate)%>%group_by(newid,time)%>%summarise(meanpal=mean(pal))
+pal.tmp=pal.all.mean%>%spread(time,meanpal)
+
+write.table(pal.tmp,"custom.meanPAL.acrossalltimepoints.txt",col.names = T,row.names = F,sep="\t",quote=F)
+
+```
+1) 0 vs 1
+```{R}
+tmp=as.data.frame(pal.tmp)%>%  mutate(x=`0`,y=`1`)%>%select(newid,x,y)
+str(tmp)
+tmp=tmp%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+id_=all%>%
+  filter(comparison=="0:1")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%select(newid)
+all.id[[1]]=id_
+cat("total number of transcript isoforms with PAL change gt 10 nt and ks.test FDR <0.01:",nrow(id_))
+all%>%
+  filter(comparison=="0:1")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%group_by(change)%>%summarise(n())
+
+t2=tmp%>%filter(newid %in% unlist(id_)) %>%select(x,y)#%>%filter(abs(y-x)>=10)
+```
+
+
+6.Draw a scatter plot with genes with PAL change labelled.
+```{R}
+pdf("F1D_0and1TEDseqscattorplot.new.pdf", width = 3, height = 3)
+ggplot(tmp, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=0.4) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="PAL.0h (nt)", y ="PAL.1h (nt)")+xlim(c(0,250))+ylim(c(0,250))+geom_abline(slope = 1, intercept = 10,linetype="dashed")+geom_abline(slope = 1, intercept = -10,linetype="dashed")+geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+ggtitle("TED-seq : 0h vs 1h")+#ggplot(t2, aes(y = y, x = x))+
+    geom_jitter(data = t2,aes(col ="indianred"), size=1)
+dev.off()
+```
+
+2) 0 vs 2
+```{R}
+tmp=as.data.frame(pal.tmp)%>%  mutate(x=`0`,y=`2`)%>%select(newid,x,y)
+str(tmp)
+tmp=tmp%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+
+id_=all%>%
+  filter(comparison=="0:2")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%select(newid)
+
+cat("total number of transcript isoforms with PAL change gt 10 nt and ks.test FDR <0.01:",nrow(id_))
+all%>%
+  filter(comparison=="0:2")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%group_by(change)%>%summarise(n())
+
+t2=tmp%>%filter(newid %in% unlist(id_)) %>%select(x,y)#%>%filter(abs(y-x)>=10)
+```
+```{R}
+pdf("F1D_0and2TEDseqscattorplot.new.pdf", width = 3, height = 3)
+ggplot(tmp, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=0.4) + scale_color_identity() +
+    theme_bw() + 
+    labs(x ="PAL.0h (nt)", y ="PAL.2h (nt)")+xlim(c(0,250))+ylim(c(0,250))+geom_abline(slope = 1, intercept = 10,linetype="dashed")+geom_abline(slope = 1, intercept = -10,linetype="dashed")+geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+ggtitle("TED-seq : 0h vs 2h")+#ggplot(t2, aes(y = y, x = x))+
+    geom_jitter(data = t2,aes(col ="indianred"), size=1)
+dev.off()
+```
+
+3) 0 vs 4
+```{R}
+tmp=as.data.frame(pal.tmp)%>%  mutate(x=`0`,y=`4`)%>%select(newid,x,y)
+str(tmp)
+tmp=tmp%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+
+id_=all%>%
+  filter(comparison=="0:4")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%select(newid)
+cat("total number of transcript isoforms with PAL change gt 10 nt and ks.test FDR <0.01:",nrow(id_))
+
+all%>%
+  filter(comparison=="0:4")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%group_by(change)%>%summarise(n())
+
+t2=tmp%>%filter(newid %in% unlist(id_)) %>%select(x,y)#%>%filter(abs(y-x)>=10)
+```
+```{R}
+pdf("F1D_0and4TEDseqscattorplot.new.pdf", width = 3, height = 3)
+ggplot(tmp, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=0.4) + scale_color_identity() +
+    theme_bw() + 
+      labs(x ="PAL.0h (nt)", y ="PAL.4h (nt)")+xlim(c(0,250))+ylim(c(0,250))+geom_abline(slope = 1, intercept = 10,linetype="dashed")+geom_abline(slope = 1, intercept = -10,linetype="dashed")+geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+ggtitle("TED-seq : 0h vs 4h")+#ggplot(t2, aes(y = y, x = x))+
+    geom_jitter(data = t2,aes(col ="indianred"), size=1)
+dev.off()
+```
+
+4) 1h vs 2h
+```{R}
+tmp=as.data.frame(pal.tmp)%>%  mutate(x=`1`,y=`2`)%>%select(newid,x,y)
+
+tmp=tmp%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+
+id_=all%>%
+  filter(comparison=="1:2")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%select(newid)
+
+cat("total number of transcript isoforms with PAL change gt 10 nt and ks.test FDR <0.01:",nrow(id_))
+all%>%
+  filter(comparison=="1:2")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%group_by(change)%>%summarise(n())
+
+t2=tmp%>%filter(newid %in% unlist(id_)) %>%select(x,y)#%>%filter(abs(y-x)>=10)
+```
+```{R}
+pdf("F1D_1and2TEDseqscattorplot.new.pdf", width = 3, height = 3)
+ggplot(tmp, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=0.4) + scale_color_identity() +
+    theme_bw() + 
+      labs(x ="PAL.1h (nt)", y ="PAL.2h (nt)")+xlim(c(0,300))+ylim(c(0,300))+geom_abline(slope = 1, intercept = 10,linetype="dashed")+geom_abline(slope = 1, intercept = -10,linetype="dashed")+geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+ggtitle("TED-seq : 1h vs 2h")+#ggplot(t2, aes(y = y, x = x))+
+    geom_jitter(data = t2,aes(col ="indianred"), size=1)
+dev.off()
+```
+
+5) 1 h vs 4 h
+```{R}
+tmp=as.data.frame(pal.tmp)%>%  mutate(x=`1`,y=`4`)%>%select(newid,x,y)
+str(tmp)
+tmp=tmp%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+
+id_=all%>%
+  filter(comparison=="1:4")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%select(newid)
+cat("total number of transcript isoforms with PAL change gt 10 nt and ks.test FDR <0.01:",nrow(id_))
+
+all%>%
+  filter(comparison=="1:4")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%group_by(change)%>%summarise(n())
+
+t2=tmp%>%filter(newid %in% unlist(id_)) %>%select(x,y)#%>%filter(abs(y-x)>=10)
+```
+```{R}
+pdf("F1D_1and4TEDseqscattorplot.new.pdf", width = 3, height = 3)
+ggplot(tmp, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=0.4) + scale_color_identity() +
+    theme_bw() + 
+      labs(x ="PAL.1h (nt)", y ="PAL.4h (nt)")+xlim(c(0,250))+ylim(c(0,250))+geom_abline(slope = 1, intercept = 10,linetype="dashed")+geom_abline(slope = 1, intercept = -10,linetype="dashed")+geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+ggtitle("TED-seq : 1h vs 4h")+#ggplot(t2, aes(y = y, x = x))+
+    geom_jitter(data = t2,aes(col ="indianred"), size=1)
+dev.off()
+```
+6) 2 vs 4h
+```{R}
+tmp=as.data.frame(pal.tmp)%>%  mutate(x=`2`,y=`4`)%>%select(newid,x,y)
+tmp=tmp%>%mutate(density = densCols(log(x)/log(2),log(y)/log(2),
+                              nbin=512, bandwidth = 0.1,
+                              colramp = colorRampPalette(yk.col(5))))
+
+
+id_=all%>%
+  filter(comparison=="2:4")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%select(newid)
+cat("total number of transcript isoforms with PAL change gt 10 nt and ks.test FDR <0.01:",nrow(id_))
+
+all%>%
+  filter(comparison=="2:4")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%group_by(change)%>%summarise(n())
+
+t2=tmp%>%filter(newid %in% unlist(id_)) %>%select(x,y)#%>%filter(abs(y-x)>=10)
+```
+```{R}
+pdf("F1D_2and4TEDseqscattorplot.new.pdf", width = 3, height = 3)
+ggplot(tmp, aes(y = y, x = x)) + 
+    geom_point(aes(col = density), size=0.4) + scale_color_identity() +
+    theme_bw() + 
+      labs(x ="PAL.2h (nt)", y ="PAL.4h (nt)")+xlim(c(0,250))+ylim(c(0,250))+geom_abline(slope = 1, intercept = 10,linetype="dashed")+geom_abline(slope = 1, intercept = -10,linetype="dashed")+geom_abline(slope = 1, intercept = 0,col="grey",size=1, linetype="dotted")+ggtitle("TED-seq : 2h vs 4h")+#ggplot(t2, aes(y = y, x = x))+
+    geom_jitter(data = t2,aes(col ="indianred"), size=1)
+dev.off()
+```
+
+total number of transcript isoforms with PAL change gt 10 nt and ks.test FDR<0.01 for all samples.
+
+```{r}
+cat("total trascript isoforms tested:",all%>%summarise(n_distinct(newid))%>%unlist)
+id_1=all%>%
+  filter(comparison=="0:1")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,hgnc,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")
+
+id_2=all%>%
+  filter(comparison=="0:2")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,hgnc,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")
+id_3=all%>%
+  filter(comparison=="0:4")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,hgnc,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")
+id_4=all%>%
+  filter(comparison=="1:2")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,hgnc,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")
+id_5=all%>%
+  filter(comparison=="1:4")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,hgnc,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")
+id_6=all%>%
+  filter(comparison=="2:4")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.01&`kspval:2`<0.01)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(newid,hgnc,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>=10,"UP",ifelse(mean.dpal<=(-10), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")
+
+all.id=list(id_1,id_2,id_3,id_4,id_5,id_6)%>%reduce(bind_rows)
+(all.id)%>%
+  #group_by(change)%>%
+  summarise(n_distinct(newid))
+```
+
+Save PAL dynamics of transcript isoforms with PAL changes (n=1893)
+```{R}
+
+write.table(pal.tmp%>%inner_join(all.id%>%arrange(newid)%>%select(newid,hgnc)%>%distinct(),by="newid"),"custom.paldynamics.ofpalchanged isoforms(1893).txt",col.names = T,row.names = F,sep="\t",quote=F)
+
+
+```
+
+gene with PAL increase between 0 and 1h
+FDR<0.05
+dPAL>6
+```{r}
+gene01=all%>%
+  filter(comparison=="0:1")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.05|`kspval:2`<0.05)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(hgnc,newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>6,"UP",ifelse(mean.dpal<=(-6), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%filter(mean.dpal>6)%>%separate(newid,c("enst","next"),sep="\\.")
+
+write.table(gene01,"Genelist_PALincrease.0to1h.txt",col.names = T,row.names = F,quote =F,sep="\t")
+
+gene02=all%>%
+  filter(comparison=="0:2")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.05|`kspval:2`<0.05)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(hgnc,newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>6,"UP",ifelse(mean.dpal<=(-6), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%filter(mean.dpal>6)%>%separate(newid,c("enst","next"),sep="\\.")
+write.table(gene02,"Genelist_PALincrease.0to2h.txt",col.names = T,row.names = F,quote =F,sep="\t")
+
+gene12=all%>%
+  filter(comparison=="1:2")%>%
+  filter((`dpal:1`>6&`dpal:2`>6)|(`dpal:1`<(-6)&`dpal:2`<(-6)))%>%
+  filter(`kspval:1`<0.05|`kspval:2`<0.05)%>%
+  group_by(newid)%>%mutate(mean.dpal=mean(`dpal:1`,`dpal:2`))%>%
+  ungroup()%>%
+  select(hgnc,newid,mean.dpal)%>%
+  mutate(change=ifelse(mean.dpal>6,"UP",ifelse(mean.dpal<=(-6), "DOWN","NOCHANGE")))%>%
+  filter(change!="NOCHANGE")%>%filter(mean.dpal>6)%>%separate(newid,c("enst","next"),sep="\\.")
+write.table(gene12,"Genelist_PALincrease.1to2h.txt",col.names = T,row.names = F,quote =F,sep="\t")
+```
