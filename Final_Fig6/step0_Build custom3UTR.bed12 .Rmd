@@ -1,0 +1,146 @@
+---
+title: "Fig7_STEP0:6-mer position dependency:step1: custom 3'UTR bed12 file."
+author: "Yeonui+Kwak"
+date: "8/10/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig7/Rcode/step0")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+```
+
+2. Build custom 3'UTR bed 12.
+
+#Bed file for 3UTR region!!!!
+
+```{R}
+#OLD
+#ref=read.table("new_THP1Transcript2.bed13",header=F,stringsAsFactors = F)
+#NEW: AFTER INTERNAL PRIMING REMOVAL, NORMALIZE READCOUNTS TO 1MILLION/SAMPLE.
+#ref=read.table("new_THP1Transcript2.n.30649.bed13",header=F,stringsAsFactors = F)
+ref=read.table("new_THP1Transcript2.n.31490.bed13",header=F,stringsAsFactors = F)
+
+nrow(ref)
+Exmp=ref%>%filter(V6=="+")%>%filter(V7!=V8)
+Exmp
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,8])
+  Txnstart=as.numeric(Exmp[i,2])
+  Exoncounts=as.numeric(Exmp[i,10])
+  count=1
+  if((length(blocksizes)==Exoncounts)&(length(blockstarts)==Exoncounts)){
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+    #blocksizes[length(blockstarts)]=Newend-(Txnstart+(blockstarts[length(blockstarts)]))
+    #Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  }
+  count=count-1 #stopcodon containing exon.
+  exonend=Txnstart+blockstarts[count]+blocksizes[count]
+  blockstarts[count]=stopcodon-1-Txnstart
+  blocksizes[count]=exonend-stopcodon+1
+  #leave 3'UTR regions only
+ 
+  blockstarts=blockstarts[count:Exoncounts]
+  blocksizes=blocksizes[count:Exoncounts]
+  Exoncounts=Exoncounts-(count-1)
+  Txnstart=blockstarts[1]+Txnstart
+  blockstarts=blockstarts-blockstarts[1]
+  Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  Exmp[i,12]=str_replace_all(paste(blockstarts, ",",collapse =""), fixed(" "), "")
+  Exmp[i,10]=Exoncounts
+  Exmp[i,2]=Txnstart
+  Exmp[i,8]=Exmp[i,2]
+  Exmp[i,7]=Exmp[i,2]
+  Exmp[i,3]=Txnstart+blockstarts[Exoncounts]+blocksizes[Exoncounts]
+  }
+   else{
+    Exmp[i,1]=NA
+  }
+}
+pl=Exmp
+#If I use getfast of beddtools, I don't need to separate blocks.
+#Exmp=Exmp%>%select(V1,V2,V4,V5,V6,V10,V11,V12)%>%
+ # separate_rows(V11,sep=",")%>%
+  #filter(V11!="")%>%
+  #separate_rows(V12,sep=",")%>%filter(V12!="")%>%distinct_at(vars(V11),.keep_all = T)%>%
+  #mutate_at(vars(V2,V11,V12,V10),.funs=as.numeric)%>%mutate(V2=V2+V12)%>%mutate(V3=V2+V11)%>%select(-V11,-V12)
+#Exmp=Exmp%>%select(V1,V2,V3,V4,V5,V6,V10)
+
+which(is.na(pl))
+pl%>%filter(V3-V2<1)
+```
+```{R}
+Exmp=ref%>%filter(V6=="-")%>%filter(V7!=V8)
+Exmp
+for (i in 1:nrow(Exmp)){
+  blockstarts=as.numeric(unlist(strsplit(str_trim(Exmp[i,12],side="both"),",")))
+  blocksizes=as.numeric(unlist(strsplit(str_trim(Exmp[i,11],side="both"),",")))
+  stopcodon=as.numeric(Exmp[i,7])
+  Txnstart=as.numeric(Exmp[i,2])
+  Exoncounts=as.numeric(Exmp[i,10])
+  count=1
+  if((length(blocksizes)==Exoncounts)&(length(blockstarts)==Exoncounts)){
+  while (stopcodon >= (Txnstart+blockstarts[count])&count<=Exoncounts){
+    count=count+1
+  }
+  count=count-1
+  exonstart=Txnstart+blockstarts[count]
+  blocksizes[count]=stopcodon+1-exonstart
+  #leave 3'UTR regions only
+  blockstarts=blockstarts[1:count]
+  blocksizes=blocksizes[1:count]
+  Exoncounts=count
+  
+  Exmp[i,11]=str_replace_all(paste(blocksizes, ",",collapse =""), fixed(" "), "")
+  Exmp[i,12]=str_replace_all(paste(blockstarts, ",",collapse =""), fixed(" "), "")
+  Exmp[i,10]=Exoncounts
+  Exmp[i,3]=Txnstart+blockstarts[Exoncounts]+blocksizes[Exoncounts]
+  Exmp[i,8]=Exmp[i,3]
+  Exmp[i,7]=Exmp[i,3]
+  #Exmp[i,3]=Exmp[i,3]+1
+  }
+  else{
+    Exmp[i,1]=NA
+  }
+  }
+
+#Exmp=Exmp%>%select(V1,V2,V4,V5,V6,V10,V11,V12)%>%
+  #separate_rows(V11,sep=",")%>%
+  #filter(V11!="")%>%
+  #separate_rows(V12,sep=",")%>%filter(V12!="")%>%distinct_at(vars(V11),.keep_all = T)%>%
+  #mutate_at(vars(V2,V11,V12,V10),.funs=as.numeric)%>%mutate(V2=V2+V12)%>%mutate(V3=V2+V11)%>%select(-V11,-V12)
+#Exmp=Exmp%>%select(V1,V2,V3,V4,V5,V6,V10)
+#Exmp=Exmp%>% drop_na()
+
+mn=Exmp
+#which(is.na(mn))
+custom.UTR.bed=bind_rows(pl,mn)%>%select(-V13)%>%arrange(V1,V2,V3)%>%drop_na()
+head(custom.UTR.bed)
+custom.UTR.bed=custom.UTR.bed%>%filter(V3-V2>50)
+custom.UTR.bed[5595:5600,]
+custom.UTR.bed%>%filter(V4=="ENST00000525317.5:90202406:chr11:90202503")
+write.table(custom.UTR.bed,"custom.3UTR.n.31490.bed12",quote=F,col.names = F,row.names = F,sep="\t")
+nrow(custom.UTR.bed)
+```

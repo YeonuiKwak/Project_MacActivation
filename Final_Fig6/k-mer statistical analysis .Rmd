@@ -1,0 +1,348 @@
+---
+title: "Association between AUcontent of k-mers and dPAL."
+author: "Yeonui+Kwak"
+date: "11/6/2019"
+output: html_document
+---
+##SEEKR
+```{r}
+#for 3'UTR longer than 600 nt, back 300 nt region  kmer contents.
+#row 9227, column 4097
+#write.csv(d,"d.csv", row.names = F)
+#l<-read.csv("d.csv")
+#str(l)
+source("http://bioconductor.org/biocLite.R")
+biocLite("Biostrings")
+require(Biostrings)
+
+kmer=read.table("~/Desktop/ReadcountTable/front2.txt",stringsAsFactors = F,header=T)
+```
+```{R}
+l=read.csv("~/Desktop/out_count.csv")
+str(l) #normalized by 3'UTR length
+colnames(l)[1]="id"
+kmer=l
+id=kmer$id
+count_letter=function(string){
+  new=gsub("A","",string)
+  new=gsub("T","",new)
+  old=string
+  return(nchar(old)-nchar(new))
+}
+AUcount=sapply(colnames(kmer[2:ncol(kmer)]),function(x) count_letter(x))
+table(AUcount)
+kmer_t=kmer %>% tidyr::gather("key", "value",-id) %>% tidyr::spread(id, value)
+kmer_t$au=AUcount
+tbl=as.tibble(kmer_t)%>%gather("ID","value",-au,-key)
+tbl=tbl%>%mutate(ID=gsub(">","",ID))
+x=as.tibble(tbl)%>%select(-au)%>%tidyr::spread(key,value)
+x=x%>%mutate(ID=gsub(">","",ID))
+final<-read.csv("final_joined data.txt",sep="\t")
+ted<-read.table("TED_merged_medianPAL.txt",header=T)
+colnames(ted)[1]="ID"
+utr<-read.csv("~/Desktop/ReadcountTable/TED_manipulated/3UTRfinal.csv")
+utr=utr%>%select(ensembl_transcript_id,X3utrlength)
+utr=utr%>%mutate("utrbin"=cut(utr$X3utrlength,breaks=quantile(utr$X3utrlength,seq(0,1,0.25)),include.lowest=T,right=F,labels=c(1:4)))
+colnames(utr)[1]="ID"
+str(utr)
+dat=as.tibble(inner_join(final,utr,by="ID"))
+dat$X3utrlength
+dat=dat%>%select(ID,X3utrlength,TED_0,TED_1,utrbin)%>%mutate("dPAL0.1"=TED_1-TED_0)
+tbl=inner_join(x,dat,by="ID")
+str(dat)
+#kmer_byau=as.tibble(kmer_t)%>%group_by(au)%>%select(-key)%>%summarise_all(funs(sum))
+#rowSums(kmer_byau[,2:ncol(kmer_byau)])
+#normalized by AU count
+#norm.kmer=kmer_byau[,2:ncol(kmer_byau)]/table(AUcount)
+#kmer_byau[,2:ncol(kmer_byau)]=norm.kmer
+#normalized by 3UTR length but in this case 300 nt regions. fixed across all transcripts.
+
+```
+
+```{R}
+#Statistical test for dPAL based on one k-mer content
+pval=c()
+str(tbl)
+for (i in 2:4097){
+ q=quantile(unlist(tbl[,i]),c(0.25,0.75))
+# sampling by UTR bins.
+ s=tbl[,c(colnames(tbl)[i],"utrbin","dPAL0.1")]
+  bottom=s[s[,1]<=q[1],]
+  bottom=bottom%>%group_by(utrbin)%>%sample_n(50)
+  top=tbl[s[,1]>=q[2],]
+  top=top%>%group_by(utrbin)%>%sample_n(50)
+
+  pval=c(pval,t.test(bottom$dPAL0.1,top$dPAL0.1)$p.value)
+}
+pval
+dim(kmer)
+```
+
+
+```{r}
+#pval
+bon.alpha=0.01/4096
+#bon.alpha #2.441406e-07
+sum(pval<bon.alpha)/length(pval)
+colnames(tbl_)[which(pval<bon.alpha)+1]
+#[1] "ATTTTG" "GCCCCC" "TATTTG" "TGTTTG" "TGCCCC" "TTATTG" "TTGCCC"
+# [8] "TTTGCC" "TTTTGG" "TTTTGC" "TTTTTG" "TTTTCG"
+p.df=as.tibble(data.frame(id=colnames(kmer)[2:(ncol(kmer))],p=pval))
+p.df$atcontent=AUcount
+p.df
+p.df$`p-value`="Non-significant"
+p.df$`p-value`[p.df$p<bon.alpha]="Significant"
+p.df$atcontent=as.double(p.df$atcontent)
+p.df[p.df$`p-value`=="Significant",]
+
+#
+pdf("back.1.pdf")
+ggplot(p.df,aes(x=atcontent, fill=`p-value`))+geom_bar(alpha=1,position="identity")+theme(panel.background = element_rect(fill = "white",
+                                                                                                                          colour = "white",
+                                                                                                                          size = 0.5, linetype = "solid"),text = element_text(size=20))+theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                                                                                                                                                                                              panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+theme(text = element_text(size=20))+ylab("Count")+xlab("6-mer AT Content")+scale_fill_manual(values=c("grey","red"))
+dev.off()
+```
+
+The association between  AT contesnt OF 6-mer and reat 300 nt 3'UTR 6 mer contents 
+
+```{R}
+
+m=tbl%>%select(p.df$id[p.df$`p-value`=="Significant"],ID,X3utrlength,utrbin,dPAL0.1)
+m2=tbl%>%select(p.df$id[p.df$`p-value`=="Significant"])
+m3=scale(m2,center = T)
+
+colnames(m3)=paste(colnames(m3),sapply(colnames(m3),function(x) count_letter(x)),sep="_")
+M4=as.tibble(m3)%>%mutate("ID"=m$ID,'dPAL0.1'=m$dPAL0.1,"bin"=m$utrbin,"utrlength"=m$X3utrlength)
+M= M4%>%gather(key,value,-ID,-dPAL0.1,-bin,-utrlength)%>%group_by(key)%>%mutate("kmerbin"=ifelse(value<=quantile(value,0.25),"lowest",ifelse(value>=quantile(value,0.75),"highest","NS")))
+head(M)
+```
+```{R}
+sample=M %>%separate(key,c("KMER","AUCount"),sep="_")%>%filter(kmerbin!="NS")%>%
+   group_by(bin,kmerbin) %>% 
+    sample_n(500)
+dim(sample)
+pdf("utrlength normalization between kmer high and low group_4.pdf",width=4,height=4)
+ggplot(sample,aes(kmerbin,log10(utrlength),fill=kmerbin))+geom_boxplot()+
+theme(legend.title=element_text(size=15),legend.text=element_text(size=15),
+                                                     axis.title=element_text(size=15),
+                                                     axis.text.x = element_text( color="black", 
+                                                                                 size=8, angle=0),
+                                                     axis.text.y = element_text( color="black", 
+                                                                                 size=15, angle=0),strip.text = element_text(size=20))+ylab("log2(3'UTR length)")+xlab("k-mer quantile")+scale_fill_discrete(name = "k-mer quantile")
+dev.off()
+
+pdf("significant k-mer medianPAL comparison.norm.pdf",height=4,width=8)
+ggplot(sample,aes(x=AUCount,y=dPAL0.1,fill=factor(kmerbin)))+geom_boxplot()+ scale_fill_discrete(name = "k-mer occurence")+xlab("AU frequency in a k-mer")+ylab("median PAL")+theme(legend.title=element_text(size=15),legend.text=element_text(size=15),axis.title=element_text(size=20),axis.text.x = element_text( color="black",size=8, angle=0),  axis.text.y = element_text( color="black", 
+                                                                                 size=15, angle=0),strip.text = element_text(size=20))+ylim(c(-0.3,0.3))
+dev.off()
+```
+
+```{r}
+M= M4%>%gather(key,value,-ID,-dPAL0.1)%>%group_by(key)%>%mutate("kmerbin"=ifelse(value<=quantile(value,0.1),"lowest",ifelse(value>=quantile(value,0.9),"highest","NS")))
+
+head(M)
+ 
+M=M%>%separate(key,c("KMER","AUCount"),sep="_")%>%filter(kmerbin!="NS")
+head(M)
+M5=M4%>%mutate("kmerbin"=ifelse(AAAAAT_6<=quantile(AAAAAT_6,0.2),"lowest",ifelse(AAAAAT_6>=quantile(AAAAAT_6,0.8),"highest","NS")))%>%filter(kmerbin!="NS")
+pdf("significant k-mer dPAL comparison_AAAAAT.pdf",height=4,width=4)
+ggplot(M5,aes(x=kmerbin,y=dPAL0.1,fill=factor(kmerbin)))+geom_boxplot()+ylim(c(-0.3,0.3))+
+scale_fill_discrete(name = "k-mer occurence")+ggtitle("dPAL(1hr/0hr)~AAAAAT")+xlab("AU frequency in a k-mer")+ylab(Delta~"log2(PAL(1hr/0hr)")+theme(legend.title=element_text(size=15),legend.text=element_text(size=15),
+                                                     axis.title=element_text(size=15),
+                                                     axis.text.x = element_text( color="black", 
+                                                                                 size=8, angle=0),
+                                                     axis.text.y = element_text( color="black", 
+                                                                                 size=15, angle=0),strip.text = element_text(size=20))
+dev.off()
+
+```
+
+
+```{R}
+m=tbl_#%>%select(p.df$id[p.df$`p-value`=="Significant"],ID,dPAL0.1)
+m2=tbl_%>%select(colnames(tbl_)[colnames(tbl_)%in% colnames(kmer)])
+m3=scale(m2,center = T)
+
+colnames(m3)=paste(colnames(m3),sapply(colnames(m3),function(x) count_letter(x)),sep="_")
+M4=as.tibble(m3)%>%mutate("ID"=m$ID,'dPAL0.1'=m$dPAL0.1)
+dim(M4)
+M= M4%>%gather(key,value,-ID,-dPAL0.1)%>%mutate("kmerbin"=ifelse(value<quantile(value,0.1),"bottom",ifelse(value>quantile(value,0.9),"top","NS")))
+head(M)
+ 
+M=M%>%separate(key,c("KMER","AUCount"),sep="_")%>%filter(kmerbin!="NS")
+head(M)
+pdf("all k-mer dPAL comparison.pdf",height=4,width=7)
+ggplot(M,aes(x=as.factor(AUCount),y=dPAL0.1,fill=factor(kmerbin)))+geom_boxplot()+ylim(c(-0.3,0.3))+xlab("AU frequency in a k-mer")+ylab(Delta~"log2(PAL(1hr/0hr)")+theme(legend.title=element_text(size=15),legend.text=element_text(size=15),
+                                                     axis.title=element_text(size=20),
+                                                     axis.text.x = element_text( color="black", 
+                                                                                 size=8, angle=0),
+                                                     axis.text.y = element_text( color="black", 
+                                                                                 size=15, angle=0),strip.text = element_text(size=20))
+dev.off()
+
+
+```
+
+```{R}
+vec=c()
+p.df
+for (i in which(p.df$`p-value`=="Significant")){
+  x=unlist(tbl_[,i+1])
+  t=mean(tbl_$dPAL0.1[x>=quantile(x,0.9)])-mean(tbl_$dPAL0.1[x<=quantile(x,0.1)])
+  vec=c(vec,t)
+}
+table(df$ATcontents)
+df=data.frame(id=p.df$id[p.df$`p-value`=="Significant"],dPAL=vec,ATcontents=p.df$atcontent[p.df$`p-value`=="Significant"])
+df[order(df$ATcontents),]
+str(df)
+df$ATcontents=factor(df$ATcontents)
+
+
+pdf("rear.5.pdf",height=4, width=7)
+ggplot(df,aes(y=dPAL,x=ATcontents))+geom_point()+theme(panel.background = element_rect(fill = "white",
+                                                                                            colour = "white",
+                                                                                            size = 0.5, linetype = "solid"),text = element_text(size=20))+theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                                                                                                                                                                panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+theme(text = element_text(size=20))+ylab(expression(Delta~Delta~"Poly-(A) tail length"))+xlab(expression("AT counts in 6-mer"))
+dev.off()
+```
+
+
+```{R}
+tbl
+tbl=tbl%>%select(p.df$id[p.df$`p-value`=="Significant"],ID,dPAL0.1)
+mean(tbl$)
+
+
+
+pdf("ATcontent_dPAL_of significant kmer.pdf")
+ggplot(df,aes(ATcontents,dPAL,group=ATcontents))+geom_boxplot(aes(fill=ATcontents))+geom_jitter()+theme(panel.background = element_rect(fill = "white",
+                                                                                            colour = "white",
+                                                                                            size = 0.5, linetype = "solid"),text = element_text(size=20))+theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                                                                                                                                                                panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+theme(text = element_text(size=20))+xlab("AU content in k-mer")+ylab(expression(Delta~"log2PAL(1hr/0hr)"))#+xlim(c(-6,6))
+dev.off()
+
+pdf("rear.3.pdf", height=8,width=8)
+ggplot(df,aes(dPAL,fill=ATcontents))+geom_histogram()+ facet_grid(ATcontents ~.)+theme(panel.background = element_rect(fill = "white",
+                                                                                                                       colour = "white",
+                                                                                                                       size = 0.5, linetype = "solid"),text = element_text(size=20))+theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                                                                                                                                                                                           panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+theme(text = element_text(size=20))+ylab("Count")+xlab(expression(Delta~Delta~"median poly-(A) tail length(Top 25%/Bottom 25%)"))+xlim(c(-6,6))
+dev.off()
+```
+```{R}
+pdf("rear.manhattan.pdf")
+
+ggplot(p.df,aes(x=id,y=-log10(p),label = id))+geom_jitter(color = ifelse(p.df$p<bon.alpha*50, "red", "black"), size = 1)+geom_hline(yintercept=-log10(bon.alpha*50),col="blue")+geom_text_repel(data          = subset(p.df, p<bon.alpha*50),segment.size  = 0.2,
+                                                                                                                                                                                          segment.color = "grey50",
+                                                                                                                                                                                          nudge_y       = 5-log10(subset(p.df, p<bon.alpha*50)$p),size=4,)#+theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+#22 6-mers out of 4096 6-mers  might be invovled in poly(A) tail metabolism
+dev.off()
+              
+
+```
+
+
+```{R}
+kmer<-read.csv("out_count.csv",stringsAsFactors = F)
+
+dim(kmer) #17550 genes and 4097 6-mer motifs
+
+kmer$X=sapply(kmer$X,function(x) substr(x,2,nchar(x)))
+#add dPAL column
+colnames(kmer)[1]="ensembl_transcript_id"
+d$dPAL=d$`4hr`-d$`0hr`
+kmer$dPAL=d$`4hr`[match(kmer$ensembl_transcript_id,d$ensembl_transcript_id)]-d$`0hr`[match(kmer$ensembl_transcript_id,d$ensembl_transcript_id)]
+#Statistical test for dPAL based on one k-mer content
+pval=c()
+rowSums(kmer[,2:4097])%>%head
+head(kmer$dPAL)
+for (i in 2:4097){
+  q=quantile(kmer[,i],c(0.25,0.7))
+
+  bottom=kmer$dPAL[kmer[,i]<=q[1]]
+
+  top=kmer$dPAL[kmer[,i]>=q[2]]  
+ 
+  pval=c(pval,t.test(bottom,top)$p.value)
+}
+
+alpha=0.001
+bon.alpha=0.001/4096
+bon.alpha #2.441406e-07
+sum(pval<bon.alpha)/length(pval)
+p.df=as.tibble(data.frame(id=colnames(kmer)[2:(ncol(kmer)-1)],p=pval))
+#write.table(p.df$id[p.df$p<bon.alpha],"6merlist.txt",quote=F)
+#write.table(p.df$id,"all6merlist.txt",quote=F, col.names = F,row.names = F)
+```
+
+manhattan plot
+```{r}
+library(ggrepel)
+pdf("6-mer effect on dPAL pvalue.pdf", height=4, width=16)
+#ggplot(p.df,aes(-log10(p)))+geom_histogram(binwidth = 1)+geom_vline(xintercept=-log10(bon.alpha),col="blue")
+ggplot(p.df,aes(x=id,y=-log10(p),label = id))+geom_jitter(color = ifelse(p.df$p<bon.alpha, "red", "black"), size = 1)+geom_hline(yintercept=-log10(bon.alpha),col="blue")+geom_text_repel(data          = subset(p.df, p<bon.alpha),segment.size  = 0.2,
+                  segment.color = "grey50",
+                  nudge_y       = 5-log10(subset(p.df, p<bon.alpha)$p),size=2,)#+theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+#369 6-mers out of 4096 6-mers  might be invovled in poly(A) tail metabolism
+dev.off()
+
+write.csv(d,"3UTRfinal.csv")
+#369/4096 #9%
+```
+#K-mer AT contents distribution after running python script to calculate the count of A and T in each 6 mer.
+```{R}
+atcontent<-read.table("all6mercount.txt")
+str(p.df)
+dim(atcontent)
+p.df$atcontent=atcontent$V1
+p.df$`p-value`="Non-significant"
+p.df$`p-value`[p.df$p<bon.alpha]="Significant"
+p.df$atcontent=as.double(p.df$atcontent)
+pdf("AU contents.pdf")
+ggplot(p.df,aes(x=atcontent, fill=`p-value`))+geom_bar(alpha=1,position="identity")+theme(panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),text = element_text(size=20))+theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+theme(text = element_text(size=20))+ylab("Count")+xlab("6-mer AT Content")+scale_fill_manual(values=c("grey","red"))
+dev.off()
+
+```
+```{r}
+com<-read.csv("communities2.csv",stringsAsFactors = F)
+#Convert transcript id.
+str(com)
+k=sapply(com$X,function(x) unlist(strsplit(x,"_"))[[1]][1])
+com$id=sapply(k,function(x) substr(x,2,nchar(x)))
+str(com)
+com=com[,c(3:2)]
+head(com,20)
+d$seekr=com$Group[match(d$ensembl_transcript_id,com$id)]
+d[d$hgnc_symbol=="TNF",]
+```
+
+
+####AT contents and delta PAL
+
+```{R}
+kmer$dPAL=d$`1hr`[match(kmer$ensembl_transcript_id,d$ensembl_transcript_id)]-d$`0hr`[match(kmer$ensembl_transcript_id,d$ensembl_transcript_id)]
+vec=c()
+for (i in which(p.df$`p-value`=="Significant")){
+  x=kmer[,i+1]
+  t=mean(kmer$dPAL[x>=quantile(x,0.75)])-mean(kmer$dPAL[x<=quantile(x,0.25)])
+  vec=c(vec,t)
+}
+hist(vec)
+df$ATcontents=factor(df$ATcontents)
+df=data.frame(id=p.df$id[p.df$`p-value`=="Significant"],dPAL=vec,ATcontents=p.df$atcontent[p.df$`p-value`=="Significant"])
+pdf("dPALandAT all.pdf",height=4, width=7)
+ggplot(df,aes(dPAL,fill=ATcontents))+geom_histogram()+theme(panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),text = element_text(size=20))+theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+theme(text = element_text(size=20))+ylab("Count")+xlab(expression(Delta~"poly-(A) tail length (4 hr/0 hr)"))
+dev.off()
+pdf("dPALandAT.pdf", height=8,width=6)
+ggplot(df,aes(dPAL,fill=ATcontents))+geom_histogram()+ facet_grid(ATcontents ~.)+theme(panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),text = element_text(size=20))+theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+theme(text = element_text(size=20))+ylab("Count")+xlab(expression(Delta~"poly-(A) tail length (4 hr/0 hr)"))
+dev.off()
+```

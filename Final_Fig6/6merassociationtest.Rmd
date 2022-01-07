@@ -1,0 +1,375 @@
+---
+title: "Step2_Test 6-mer associated with PAL change using k-mer table"
+author: "Yeonui+Kwak"
+date: "8/10/2020"
+output: html_document
+---
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Final_Fig7/Rcode/step6")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+
+
+#CDF
+
+library(gridExtra)
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(5)[c(1,5)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(0, 5000) +
+```
+
+6-MER TABLE
+
+```{R}
+kmer_front<-read.table("front500_6mertable.txt", stringsAsFactors = F,header = T)
+kmer_last<-read.table("last500_6mertable.txt", stringsAsFactors = F,header = T)
+kmer_front<-kmer_front%>%separate(id,c("enst","ref","chr","cps"),sep=":")%>%unite("newid",c(enst,cps),sep=":")%>%
+  mutate(newid=substr(newid,start = 1,stop=nchar(newid)-3))
+kmer_last<-kmer_last%>%separate(id,c("enst","ref","chr","cps"),sep=":")%>%unite("newid",c(enst,cps),sep=":")%>%
+  mutate(newid=substr(newid,start = 1,stop=nchar(newid)-3))
+#substr("ENST00000379198.3:1235043(+)",start = 1,stop=nchar("ENST00000379198.3:1235043(+)")-3)
+#PAL table
+pal<-read.table("custom.meanPAL.acrossalltimepoints.txt",stringsAsFactors = F,header=T)
+pal=pal%>%separate(newid,c("enst","ref","cps"),sep=":")%>%unite("newid",c(enst,cps),sep=":")
+head(pal)
+```
+
+
+
+Statistical test
+high 6-MER vs low 6 mer ddPAL comparison
+0h vs 4h  front
+```{R}
+pval=c()
+ddpal=c()
+m=pal%>%inner_join(kmer_front%>%select(-ref,-chr),by="newid")
+
+nrow(m)#n=2168 transcripts with UTR >1kb and PAL detected across all time points
+for (i in 7:(ncol(m))){
+  dpal=m$X4-m$X0
+   q=quantile(m[,i],c(0.25,0.75)) #6-mer quantile
+  bottom=dpal[m[,i]<=q[1]]
+  top=dpal[m[,i]>=q[2]]  
+  
+  pval=c(pval,t.test(bottom,top)$p.value)
+  ddpal=c(ddpal,mean(top)-mean(bottom))
+}
+
+df=data.frame("id"=colnames(m)[7:ncol(m)],"pvalue"=pval,"ddpal"=ddpal)%>%mutate(fdr=p.adjust(pval, method = "fdr"))%>%mutate()
+bon.alpha=0.01/4096
+bon.alpha #2.441406e-07
+sum(df$fdr<0.1)
+df[which(df$fdr<0.2),]
+aucontent=read.table("all6merIDandAUcontent.txt",header=F,stringsAsFactors = F)
+aucontent=aucontent%>%rename("freq"=V2,"id"=V1)
+head(aucontent)
+p.df_front=df%>%inner_join(aucontent%>%mutate(freq=as.factor(freq)),by="id")%>%mutate("pvalue"=ifelse(fdr<0.2,"Significant","NS"))#%>%group_by(freq,pvalue)%>%mutate(count=n())
+
+p.df[p.df$`pvalue`=="Significant",]
+col = yk.col(7)[c(1:7)]
+```
+
+0h vs 4h  last
+```{R}
+pval=c()
+ddpal=c()
+m=pal%>%inner_join(kmer_last%>%select(-ref,-chr),by="newid")
+
+nrow(m)#n=2168 transcripts with UTR >1kb and PAL detected across all time points
+for (i in 7:(ncol(m))){
+  dpal=m$X4-m$X0
+   q=quantile(m[,i],c(0.25,0.75)) #6-mer quantile
+  bottom=dpal[m[,i]<=q[1]]
+  top=dpal[m[,i]>=q[2]]  
+  
+  pval=c(pval,t.test(bottom,top)$p.value)
+  ddpal=c(ddpal,mean(top)-mean(bottom))
+}
+
+df=data.frame("id"=colnames(m)[7:ncol(m)],"pvalue"=pval,"ddpal"=ddpal)%>%mutate(fdr=p.adjust(pval, method = "fdr"))%>%mutate()
+sum(df$fdr<0.1)
+df[which(df$fdr<0.2),]
+aucontent=read.table("all6merIDandAUcontent.txt",header=F,stringsAsFactors = F)
+aucontent=aucontent%>%rename("freq"=V2,"id"=V1)
+head(aucontent)
+p.df_last=df%>%inner_join(aucontent%>%mutate(freq=as.factor(freq)),by="id")%>%mutate("pvalue"=ifelse(fdr<0.2,"Significant","NS"))#%>%group_by(freq,pvalue)%>%mutate(count=n())
+
+p.df[p.df$`pvalue`=="Significant",]
+col = yk.col(7)[c(1:7)]
+```
+
+```{R}
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+
+p.df=bind_rows(p.df_front%>%mutate(location="Front"),p.df_last%>%mutate(location="Rear"))%>%mutate(freq=as.factor(freq,levels=c(0,1,2,3,4,5,6)))
+p.df2=p.df%>%filter(fdr<0.1)
+pdf("Fig7F_histogram_byddPAL.pdf",width=4,height=2.5)
+ggplot(data = p.df2%>%filter(pvalue=="Significant"),
+            aes(x = ddpal,
+                fill = as.factor(freq)))+geom_histogram(position ="identity",bins=50,alpha=1)+facet_grid(location~.)+ #facet_wrap(diff~.,scales="free",ncol=3)+
+ labs(fill = "AU frequency in 6-mer")+
+  xlab(expression(Delta*Delta*"PAL (6mer rich - 6mer low)"))+ scale_fill_manual(values =) +scale_fill_manual(values=yk.col(7)[1:7], 
+                       name="n(A|U) in a 6mer",
+                       limits=c(0:6),
+                       labels=c(0:6))+
+  geom_hline(yintercept =0,col="grey")+
+  theme_bw()+ylab("Number of \n significantly associated 6-mers")#+ggtitle("position dependency of 6mers in 3´UTRs")
+dev.off()
+
+s=p.df2%>%filter(pvalue=="Significant")%>%group_by(location,freq)%>%summarise(count=n(),meanval=mean(ddpal),sd=sd(ddpal))
+pdf("Fig7F_histogram_byAUfreq.pdf",width=6,height=3)
+ggplot(data=s,aes(x=freq,fill=meanval,y=count))+geom_bar(stat="identity",position="dodge")+facet_grid(.~location)+theme_bw()+scale_fill_gradientn(colours = yk.col(10),name=expression(Delta*Delta*"PAL (6mer rich - 6mer low)"))+ylab("Number of significantly \n associated 6-mers")+xlab("n(A|U) in a 6mer")+scale_x_discrete(limit = c(1:6))
+dev.off()
+
+
+write.table(p.df,"0.4h.txt",col.names = T,row.names = F,sep="\t",quote=F)
+
+```
+
+all other time points
+
+
+
+Statistical test
+high 6-MER vs low 6 mer ddPAL comparison
+front
+```{R}
+p.df.front.list=list()
+```
+```{R}
+pval=c()
+ddpal=c()
+m=pal%>%inner_join(kmer_front%>%select(-ref,-chr),by="newid")
+nrow(m)#n=2168 transcripts with UTR >1kb and PAL detected across all time points
+
+for (i in 7:(ncol(m))){
+  dpal=m$X4-m$X1
+   q=quantile(m[,i],c(0.25,0.75)) #6-mer quantile
+  bottom=dpal[m[,i]<=q[1]]
+  top=dpal[m[,i]>=q[2]]  
+  
+  pval=c(pval,t.test(bottom,top)$p.value)
+  ddpal=c(ddpal,mean(top)-mean(bottom))
+}
+
+df=data.frame("id"=colnames(m)[7:ncol(m)],"pvalue"=pval,"ddpal"=ddpal)%>%mutate(fdr=p.adjust(pval, method = "fdr"))
+aucontent=read.table("all6merIDandAUcontent.txt",header=F,stringsAsFactors = F)
+aucontent=aucontent%>%rename("freq"=V2,"id"=V1)
+p.df_front=df%>%inner_join(aucontent%>%mutate(freq=as.factor(freq)),by="id")%>%mutate("pvalue"=ifelse(fdr<0.2,"Significant","NS"))#%>%group_by(freq,pvalue)%>%mutate(count=n())
+p.df.front.list[[5]]<-p.df_front%>%mutate("comparison"="1h vs 4h")
+
+col = yk.col(7)[c(1:7)]
+```
+
+0h vs 4h  last
+
+```{R}
+p.df.last.list=list()
+```
+
+```{R}
+pval=c()
+ddpal=c()
+m=pal%>%inner_join(kmer_last%>%select(-ref,-chr),by="newid")
+
+nrow(m)#n=2168 transcripts with UTR >1kb and PAL detected across all time points
+for (i in 7:(ncol(m))){
+  dpal=m$X4-m$X1
+   q=quantile(m[,i],c(0.25,0.75)) #6-mer quantile
+  bottom=dpal[m[,i]<=q[1]]
+  top=dpal[m[,i]>=q[2]]  
+  
+  pval=c(pval,t.test(bottom,top)$p.value)
+  ddpal=c(ddpal,mean(top)-mean(bottom))
+}
+
+df=data.frame("id"=colnames(m)[7:ncol(m)],"pvalue"=pval,"ddpal"=ddpal)%>%mutate(fdr=p.adjust(pval, method = "fdr"))
+aucontent=read.table("all6merIDandAUcontent.txt",header=F,stringsAsFactors = F)
+aucontent=aucontent%>%rename("freq"=V2,"id"=V1)
+p.df_last=df%>%inner_join(aucontent%>%mutate(freq=as.factor(freq)),by="id")%>%mutate("pvalue"=ifelse(fdr<0.2,"Significant","NS"))#%>%group_by(freq,pvalue)%>%mutate(count=n())
+
+p.df.last.list[[5]]<-p.df_last%>%mutate("comparison"="1h vs 4h")
+col = yk.col(7)[c(1:7)]
+```
+
+
+```{R}
+p.df.last.list[[4]]%>%filter(fdr<0.2)
+front=bind_rows(p.df.front.list)%>%mutate(location="front")
+rear=bind_rows(p.df.last.list)%>%mutate(location="rear")
+final=bind_rows(front,rear)
+write.table(final,"Fig7E.t.test.result.6mersassociatedwithdPAL.txt",col.names = T,row.names = F,sep="\t",quote=F)
+final=final%>%filter(fdr<0.1)%>%group_by(location,comparison,freq)%>%summarise(`6mer.count`=n())%>%ungroup()
+final[22,]=c("rear","1h vs 2h",1,0)
+final=final%>%complete(location,nesting(comparison,freq),fill =list(`6mer.countt`=0))%>%spread(freq,`6mer.count`)%>%replace(is.na(.),0)
+
+write.table(final,"FDRlt0.1.6mersassociatedwithdPAL.txt",col.names = T,row.names = F,sep="\t",quote=F)
+
+final.long=final%>%gather(freq,`6mer.count`,-location,-comparison)%>%mutate(`6mer.count`=as.numeric(`6mer.count`))
+str(final.long)
+final.long%>%group_by(comparison,location)%>%summarise(sum(`6mer.count`))
+pdf("Fig7F_histogram_bylocationforallcomparisons.pdf",width=5,height=3.5)
+ggplot(data=final.long,aes(x=location,fill=freq,y=`6mer.count`))+geom_bar(stat="identity")+
+  facet_wrap(.~comparison,ncol=3)+
+  theme_bw()+scale_fill_manual(values = yk.col(7)[1:6],name="n(A|U) in a 6mer")+ylab("Number of significantly \n associated 6-mers")+xlab("3´UTR location")+scale_fill_manual(values=yk.col(7)[1:7], 
+                       name="n(A|U) in a 6mer",
+                       limits=c(0:6),
+                       labels=c(0:6))
+dev.off()
+
+
+
+pdf("Fig7F_histogram_byddPAL.pdf",width=4,height=2.5)
+ggplot(data = p.df2%>%filter(pvalue=="Significant"),
+            aes(x = ddpal,
+                fill = as.factor(freq)))+geom_histogram(position ="identity",bins=50,alpha=1)+facet_grid(location~.)+ #facet_wrap(diff~.,scales="free",ncol=3)+
+ labs(fill = "AU frequency in 6-mer")+
+  xlab(expression(Delta*Delta*"PAL (6mer rich - 6mer low)"))+ scale_fill_manual(values =) +scale_fill_manual(values=yk.col(7)[1:7], 
+                       name="n(A|U) in a 6mer",
+                       limits=c(0:6),
+                       labels=c(0:6))+
+  geom_hline(yintercept =0,col="grey")+
+  theme_bw()+ylab("Number of \n significantly associated 6-mers")#+ggtitle("position dependency of 6mers in 3´UTRs")
+dev.off()
+```
+
+
+###steady state PAL and 6-mer association
+
+Statistical test
+high 6-MER vs low 6 mer ddPAL comparison
+0h 
+```{R}
+pval=c()
+ddpal=c()
+m=pal%>%inner_join(kmer_front%>%select(-ref,-chr),by="newid")
+
+nrow(m)#n=2168 transcripts with UTR >1kb and PAL detected across all time points
+for (i in 7:(ncol(m))){
+  dpal=m$X0
+   q=quantile(m[,i],c(0.25,0.75)) #6-mer quantile
+  bottom=dpal[m[,i]<=q[1]]
+  top=dpal[m[,i]>=q[2]]  
+  
+  pval=c(pval,t.test(bottom,top)$p.value)
+  ddpal=c(ddpal,mean(top)-mean(bottom))
+}
+
+df=data.frame("id"=colnames(m)[7:ncol(m)],"pvalue"=pval,"ddpal"=ddpal)%>%mutate(fdr=p.adjust(pval, method = "fdr"))%>%mutate()
+
+sum(df$fdr<0.2)
+df[which(df$fdr<0.2),]
+aucontent=read.table("all6merIDandAUcontent.txt",header=F,stringsAsFactors = F)
+aucontent=aucontent%>%rename("freq"=V2,"id"=V1)
+head(aucontent)
+p.df_front=df%>%inner_join(aucontent%>%mutate(freq=as.factor(freq)),by="id")%>%mutate("pvalue"=ifelse(fdr<0.2,"Significant","NS"))#%>%group_by(freq,pvalue)%>%mutate(count=n())
+
+p.df[p.df$`pvalue`=="Significant",]
+col = yk.col(7)[c(1:7)]
+```
+
+0h vs 4h  last
+```{R}
+pval=c()
+ddpal=c()
+m=pal%>%inner_join(kmer_last%>%select(-ref,-chr),by="newid")
+
+nrow(m)#n=2168 transcripts with UTR >1kb and PAL detected across all time points
+for (i in 7:(ncol(m))){
+  dpal=m$X0
+   q=quantile(m[,i],c(0.25,0.75)) #6-mer quantile
+  bottom=dpal[m[,i]<=q[1]]
+  top=dpal[m[,i]>=q[2]]  
+  
+  pval=c(pval,t.test(bottom,top)$p.value)
+  ddpal=c(ddpal,mean(top)-mean(bottom))
+}
+
+df=data.frame("id"=colnames(m)[7:ncol(m)],"pvalue"=pval,"ddpal"=ddpal)%>%mutate(fdr=p.adjust(pval, method = "fdr"))%>%mutate()
+sum(df$fdr<0.1)
+df[which(df$fdr<0.2),]
+aucontent=read.table("all6merIDandAUcontent.txt",header=F,stringsAsFactors = F)
+aucontent=aucontent%>%rename("freq"=V2,"id"=V1)
+head(aucontent)
+p.df_last=df%>%inner_join(aucontent%>%mutate(freq=as.factor(freq)),by="id")%>%mutate("pvalue"=ifelse(fdr<0.2,"Significant","NS"))#%>%group_by(freq,pvalue)%>%mutate(count=n())
+
+
+
+col = yk.col(7)[c(1:7)]
+
+pdf("Fig7F_histogram_byddPAL.pdf",width=4,height=2.5)
+ggplot(data = p.df_last%>%filter(pvalue=="Significant"),
+            aes(x = ddpal,
+                fill = as.factor(freq)))+geom_histogram(position ="identity",bins=50,alpha=1)+ #facet_wrap(diff~.,scales="free",ncol=3)+
+ labs(fill = "AU frequency in 6-mer")+
+  xlab(expression(Delta*"PAL (6mer rich - 6mer low)"))+ scale_fill_manual(values =) +scale_fill_manual(values=yk.col(7)[1:7], 
+                       name="n(A|U) in a 6mer",
+                       limits=c(0:6),
+                       labels=c(0:6))+
+  geom_hline(yintercept =0,col="grey")+
+  theme_bw()+ylab("Number of \n significantly associated 6-mers")#+ggtitle("position dependency of 6mers in 3´UTRs")
+dev.off()
+
+s=p.df_last%>%filter(pvalue=="Significant")%>%group_by(freq)%>%summarise(count=n(),meanval=mean(ddpal),sd=sd(ddpal))
+pdf("Fig7F_histogram_byAUfreq.pdf",width=6,height=3)
+ggplot(data=s,aes(x=freq,fill=meanval,y=count))+geom_bar(stat="identity",position="dodge")+theme_bw()+scale_fill_gradientn(colours = yk.col(100),name=expression(Delta*Delta*"PAL (6mer rich - 6mer low)"))+ylab("Number of significantly \n associated 6-mers")+xlab("n(A|U) in a 6mer")+scale_x_discrete(limit = c(1:6))
+dev.off()
+
+pdf("6mersAssociated with steadystate PAL.pdf",width=4,height=3)
+ggplot(data = p.df_last%>%filter(pvalue=="Significant")%>%mutate(Type=ifelse(id=="AATAAA","A-rich","T-rich")),
+            aes(x = id,y=ddpal,fill=Type))+geom_bar(stat="identity")+
+  xlab(expression("6mers associated with "*"steady-state PAL"))+
+  ylab(expression(Delta*"PAL (6mer rich - 6mer low)"))+  theme_bw()+
+  scale_fill_manual(values=yk.col(7)[c(1,7)])+ggtitle("3´UTR rear 500 nt")
+dev.off()
+
+```
+
+
+
+
+
+
+Visualize k-mer associated with dPAL
+```{R}
+tmp2=tmp%>%select(type,ATTAAA)%>%mutate(ATTAAA=ATTAAA*1000)
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  #xlim(0, ) +
+  ylab("Cumulative fraction")
+cdf_common +
+  stat_ecdf(data = tmp2,
+            aes(x = ATTAAA,
+                col = type),
+            geom = "step")
+```
+

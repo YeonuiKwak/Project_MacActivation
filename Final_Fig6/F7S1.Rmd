@@ -1,0 +1,240 @@
+---
+title: "F7S1:AUcontentperposition.heatmap"
+author: "Yeonui+Kwak"
+date: "6/22/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig7/Tmp1")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+
+col = yk.col(10)[c(3,5,7)] 
+```
+
+
+
+
+
+
+```{R}
+
+auPos = read.table("cutom3UTR.AUposition.txt", header = F, stringsAsFactors = F)
+colnames(auPos)[1:2] = c("id", "len")
+auPos=auPos%>%separate(id,c("newid","interval"),sep="::")
+auPos=auPos%>%separate(newid,c("id","ref","chr","cps"),sep=":")%>%unite("newid",c(id,ref,cps),sep=":")
+nrow(auPos.cm)
+colnames(auPos)[3:252] = paste0("pos_", seq(-4980, 0, by = 20))
+
+#PAL
+dpal=read.table("custom.meanPAL.acrossalltimepoints.txt",header=T,stringsAsFactors = F)
+dpal=dpal%>%mutate(d_0_4=X1-X0)
+
+
+auPos = auPos %>%
+	arrange(len) %>%
+	filter(len > 50)
+auPos[auPos == -1] = NA
+
+auPos.cm = auPos %>%
+	inner_join(dpal %>% select(newid))
+dpal.acm = auPos.cm %>% select(newid) %>%
+	inner_join(dpal, by = "newid")
+
+
+
+auPos.palup = auPos.cm[scale(dpal.acm$d_0_4)[,1] > 1 , -(1:2)]
+auPos.palup[auPos.palup < 0] = NA
+auPos.paldn = auPos.cm[scale(dpal.acm$d_0_4)[,1] < -1 , -(1:2)]
+auPos.paldn[auPos.paldn < 0] = NA
+
+
+red_hmap = function(dpcm, nrow = 200, ncol = 125) {
+	binrep = floor(250/ncol)
+	bincol = 250/binrep
+	d = dpcm[0:(bincol-1)*binrep+1]
+	if(binrep>1) for(i in 2:binrep)
+		d = d + dpcm[0:(bincol-1)*binrep+i]
+	d = d/binrep
+	binrep = floor(nrow(dpcm)/nrow)
+	bincol = nrow(dpcm)/binrep
+	d2 = d[0:(bincol-1)*binrep+1,]
+	if(binrep>1) for(i in 2:binrep)
+		d2 = d2 + d[0:(bincol-1)*binrep+i,]
+	d2 = d2/binrep
+	return(d2)
+}
+
+auPos.pu.r = red_hmap(auPos.palup)
+auPos.pd.r = red_hmap(auPos.paldn)
+
+xlab = round(seq(-5*(1-1/ncol(auPos.pu.r)), 0, length.out = ncol(auPos.pu.r)), digits = 2)
+xlab[xlab %% 0.4 > 0.01] = ""
+xlab[length(xlab)] = expression(3*minute*CPS)
+
+library(pheatmap)
+library(gridExtra)
+
+pdf("AU_positionheatmap.pdf", width = 5, height = 3)
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(51) 
+br = 35:85/100
+grid.arrange(
+pheatmap(auPos.pu.r, color = col, breaks = br,
+	 cluster_rows = F, cluster_cols = F,
+	 show_rownames = F, show_colnames = T,
+	 labels_col = xlab, fontsize_col = 8,
+	 main = expression(Increased~italic(Delta)*PAL),
+	 silent = T, na_col = "#dddddd")[[4]],
+pheatmap(auPos.pd.r, color = col, breaks = br,
+	 cluster_rows = F, cluster_cols = F,
+	 show_rownames = F, show_colnames = T,
+	 labels_col = xlab, fontsize_col = 8,
+	 main = expression(Decreased~italic(Delta)*PAL),
+	 silent = T, na_col = "#dddddd")[[4]],
+	 ncol = 2)
+dev.off()
+```
+
+line 
+```{R}
+
+tmp=auPos %>%
+	inner_join(dpal, by="newid")
+tmp=tmp%>%mutate(palgroup=ifelse(d_0_4<=(-6),"PAL DN",ifelse(d_0_4>=(6),"PAL UP",ifelse(abs(d_0_4)<5,"PAL No change","NA"))))%>%filter(palgroup!="NA")
+tmp=tmp%>%select(-X0,-X1,-X2,-X4,-d_0_4)
+df_summary=tmp%>%gather("pos","AUcontent",-newid,-len,-palgroup)%>%separate(pos,c("p","position"),sep="_")%>%mutate(position=as.numeric(position))%>%group_by(palgroup,position)%>%summarise(n=n(),mean=mean(AUcontent,na.rm=T),sd=sd(AUcontent,na.rm=T),se = sd(AUcontent, na.rm=T)/sqrt(sum(!is.na(AUcontent))))
+df_summary$CI_lower <- df_summary$mean + qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+df_summary$CI_upper <- df_summary$mean - qt((1-0.95)/2, df=df_summary$n-1)*df_summary$se
+#df_summary$CI_lower <- df_summary$mean + df_summary$sd
+#df_summary$CI_upper <- df_summary$mean - df_summary$sd
+
+col = yk.col(10)[c(3,8)] 
+pdf("MeanAUcontentperposition.pdf",width=4,height=2.5)
+ggplot(df_summary%>%filter(palgroup%in%c("PAL UP","PAL DN")), aes(x=position, y=mean)) +
+   geom_line(data=df_summary%>%filter(palgroup%in%c("PAL UP","PAL DN")), aes(x=position, y=mean,group=palgroup,col=palgroup), size=0.5, alpha=1)+geom_ribbon(aes(ymin=CI_lower, ymax=CI_upper,group=palgroup,fill=palgroup), alpha=0.6)+theme_bw()+
+  ylim(c(0.1,0.9))+xlim(c(-5200,0))+
+  scale_fill_manual(values=col,name = "PAL", labels = c("DN","NC", "UP"))+
+  xlab("Relative position from PAS in the 3'UTR (nt)")+ylab("AU content +95% CI (%)")+
+  scale_colour_manual(values=col,name = "PAL", labels = c("DN","NC", "UP"))#+facet_grid(.~palgroup, labeller = labeller(dTED_group=pal.labs))
+dev.off()
+```
+
+KMER
+
+```{R}
+kmer.raw=read.table("customutr3.kmer.txt",header=T,stringsAsFactors = F)
+head(kmer.raw)
+kmer.raw=kmer.raw%>%separate(name,c("newid","interval"),sep="::")%>%
+  separate(newid,c("id","ref","chr","cps"),sep=":")%>%unite("newid",c(id,ref,cps),sep=":")%>%select(-chr,-interval)
+
+# kmer analysis
+#kmer.raw = read.table("kmer/utr3.kmer.txt", header = T)
+kmer.raw = kmer.raw %>%
+	mutate(len = rowSums(.[-1]))
+
+kmer.long = kmer.raw %>%
+	gather(kmer, count, -newid, -len)
+
+# dPAL increased and decreased sets
+dpal.up = dpal %>%
+	select(newid, d_0_4) %>%
+	mutate(d_0_4 = scale(d_0_4)[,1]) %>%
+	filter(d_0_4 > 1) %>%
+	select(newid)
+
+dpal.dn = dpal %>%
+	select(newid, d_0_4) %>%
+	mutate(d_0_4 = scale(d_0_4)[,1]) %>%
+	filter(d_0_4 < -1) %>%
+	select(newid)
+
+kmer.up = kmer.long %>%
+	inner_join(dpal.up, by = "newid")
+
+kmer.dn = kmer.long %>%
+	inner_join(dpal.dn, by = "newid")
+
+kmer.up.sum = kmer.up %>%
+	group_by(kmer) %>%
+	summarise(len.up = sum(len),
+		  count.up = sum(count)) %>%
+	ungroup()
+
+kmer.dn.sum = kmer.dn %>%
+	group_by(kmer) %>%
+	summarise(len.dn = sum(len),
+		  count.dn = sum(count)) %>%
+	ungroup()
+
+kmer.ratio = inner_join(kmer.up.sum,
+			kmer.dn.sum,
+			by = "kmer") %>%
+	mutate(ratio = count.up / len.up / count.dn * len.dn) %>%
+	arrange(-ratio)
+
+kmer.freq = bind_rows(kmer.up %>%
+		      mutate(type = "up"),
+	      	kmer.dn %>%
+			mutate(type = "dn")) %>%
+	mutate(freq = count / len * 1000) %>%
+	select(newid, kmer, freq, type) %>%
+	spread(type, freq) %>%
+	group_by(kmer) %>%
+	summarise(p = ks.test(up, dn)$p.value)
+
+kmer.ratio = kmer.ratio %>%
+	inner_join(kmer.freq, by = "kmer") %>%
+	mutate(fdr = p.adjust(p, method = "fdr")) %>%
+	mutate(ratio = log2(ratio)) %>%
+	mutate(class = ifelse(ratio > 0.5 & fdr < 0.05, "UP",
+			      ifelse(ratio < -0.5 & fdr < 0.05, "DN", "NS")))
+
+kmer.ratio=kmer.ratio%>%mutate(sub=gsub("T","",kmer))%>%mutate(sub=gsub("A","",sub))%>%mutate(AUcount=nchar(kmer)-nchar(sub))
+pdf("6mer_enrichment.0.1.pdf", width = 5, height = 4.5)
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(5)[2:4]
+col = yk.col(7)[1:7]
+ggplot(data = kmer.ratio, aes(x = ratio, y = -log10(p),size=-log10(fdr))) +
+  scale_size(breaks = seq(from=0,to=15,by = 3), range = c(0.1,2))+
+  geom_point(data=kmer.ratio,aes(size=-log10(fdr),alpha=0.0001),shape = 16)+
+
+	geom_point(data=kmer.ratio%>%filter(class!="NS"),stat = "identity",stroke = 1, shape = 16,aes(alpha=-log10(fdr),size=-log10(fdr),col=as.factor(AUcount)))+
+  scale_alpha(guide = 'none')+
+	theme_bw() +
+	#guides(col = guide_legend(override.aes = list(size= 2))) +
+	scale_color_manual(values = col) +
+  #scale_size(guide='none')+
+	coord_cartesian(xlim = c(-1.5, 1.5),
+			ylim = c(0, 20), expand = F)+ 
+	xlab(log[2]~"6-mer enrichment (PAL UP genes/PAL DN genes)") +
+	ylab(expression(-log[10]~p~value)) +
+	labs(title = "6-mer enrichment: 0 h vs 1 h", col = "n(AU) in 6mer")
+
+dev.off()
+
+
+```
+

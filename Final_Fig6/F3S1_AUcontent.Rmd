@@ -1,0 +1,131 @@
+---
+title: "F3S1_AU Content and dPAL"
+author: "Yeonui+Kwak"
+date: "4/2/2020"
+output: html_document
+---
+
+1. compare distribution of poly(A) tail length between 0 and 4 h samples.
+1. load a position matrix.
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig3/Tmp1")
+
+```
+2. Install libraries required for Dataprocessing.
+```{R}
+install.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr) 
+install.packages('ggbeeswarm')
+library(ggbeeswarm)
+```
+
+
+3. Load data and ref.
+
+```{r}
+#ref
+au=read.csv("3UTR_ATcontent.txt",sep="\t",stringsAsFactors = F,header=F);colnames(au)=c("id","AUcontent")
+utr<-read.csv("3UTR_Final.csv")
+utr=utr%>%select(ensembl_transcript_id,X3utrlength)%>%rename("id"=ensembl_transcript_id)
+head(utr)
+#data
+all<-read.table("TED.PRO.CPS.final.txt",sep="\t",header=T, stringsAsFactors = F)
+cat("total number of genes in all three datasets:",nrow(all))
+head(all)
+```
+
+4.Bin genes into 4 groups based on AU content in the 3'UTR.
+
+```{R}
+mat=all%>%mutate("dCPS_0and1"=CPS_1-CPS_0)%>%mutate("dCPS_0and2"=CPS_2-CPS_0)%>%mutate("dCPS_0and4"=CPS_4-CPS_0)%>%mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_1and4"=CPS_4-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%mutate("dTED_1and2"=TED_2-TED_1)%>%mutate("dTED_2and4"=TED_4-TED_2)%>%mutate("dTED_0and4"=TED_4-TED_0)%>%mutate("dTED_0and1"=TED_1-TED_0)%>%mutate("dTED_0and2"=TED_2-TED_0)%>%mutate("dTED_1and4"=TED_4-TED_1)
+q_TED=quantile(mat$dTED_0and4,c(0,0.25,0.5,0.75,1))
+mat=mat%>%mutate("tailChange"=ifelse(dTED_0and4<q_TED[2],"Shortened",ifelse(dTED_0and4>q_TED[4],"Lengthened","NS")))%>%
+  inner_join(utr, by="id")
+quantile(mat$X3utrlength,c(0.25,0.75))
+
+mat$utrlengthgroup="medium"
+mat$utrlengthgroup[mat$`X3utrlength`<quantile(mat$X3utrlength,c(0.25,0.75))[1]]="short"
+mat$utrlengthgroup[mat$`X3utrlength`>quantile(mat$X3utrlength,c(0.25,0.75))[2]]="long"
+mat$utrlengthgroup=factor(mat$utrlengthgroup , levels=c("short","medium","long"))
+mat=inner_join(mat,au,by="id")
+q_AU=quantile(mat$AUcontent,c(0.25,0.5,0.75))
+mat=mat%>%mutate("AUgroup"=ifelse(AUcontent<q_AU[1],"0-25%",ifelse(AUcontent>q_AU[3],"75-100%",ifelse((AUcontent>q_AU[2]),"50-75%","25-50%"))))%>%mutate(AUgroup=factor(AUgroup,levels=c("0-25%","25-50%","50-75%","75-100%")))
+mat=mat[,21:ncol(mat)]
+mat
+mat=mat%>%gather("diff","value",-tailChange,-X3utrlength,-utrlengthgroup,-AUcontent,-AUgroup)
+mat=mat%>%mutate("tailChange"=ifelse(value<q_TED[2],"Shortened",ifelse(value>q_TED[4],"Lengthened","NS")))
+head(mat)
+
+
+
+utrbin=cut(mat$X3utrlength,breaks=quantile(mat$X3utrlength,c(0,0.25,0.5,0.75,1)),include.lowest=T,right=F,labels=c(1,2,3,4))
+sample=mat %>% mutate("utrbin"=utrbin)%>%
+    group_by(AUgroup,utrbin) %>% 
+    sample_n(1500)
+
+sample$diff=factor(sample$diff,levels=c("dTED_0and1","dTED_0and2","dTED_1and2","dTED_0and4","dTED_1and4","dTED_2and4"))
+
+```
+
+Set color.
+```{R}
+library(gridExtra)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(5)[c(1,2,4,5)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-50, 50) +
+  ylab("Cumulative fraction")
+
+
+```
+
+
+
+Draw CDF plot
+```{R}
+pdf("Fig3A_cdf_dPAL_dTED_0and4.pdf",width=3.5,height=2)
+cdf_common +
+  stat_ecdf(data = sample%>%filter(diff=="dTED_0and4"),
+            aes(x = value,
+                col = AUgroup),
+            geom = "step") +
+  labs( title =expression("AU content" ),color ="AU content") +
+  xlab(expression(italic(Delta)*"log2(PAL)"))#+xlim(c(-0.6,0.6))
+dev.off()
+```
+
+ALL timepoints
+```{R}
+#all
+head(sample)
+sample_=sample%>%
+  group_by(diff)%>%
+  #mutate("Tail"=ifelse(value<quantile(value,0.25),"DW",ifelse(value>quantile(value,0.75),"UP","NC")))
+sample_=sample_%>%gather("dcps_diff","dcps_value",1:6)
+str(sample_)
+pdf("FigS3A.cdf_dPAL_AUcontent_all.pdf",width=9,height=5)
+cdf_common +
+  stat_ecdf(data = sample,
+            aes(x = value,
+                col = AUgroup),
+            geom = "step")+facet_wrap(.~diff,ncol = 3,scales="free")+
+labs(title ="AU content")+labs(color = expression("AU content"))+
+  xlab(expression(italic(Delta)*"PAL (nt)"))
+dev.off()
+```
+
+
+
+```

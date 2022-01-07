@@ -1,0 +1,156 @@
+---
+title: "Fig5E"
+author: "Yeonui+Kwak"
+date: "12/17/2019"
+output: html_document
+---
+
+```{R}
+kmer_front<-read.table("kmercountinfront500.txt", stringsAsFactors = F,header = T)
+kmer_front=kmer_front%>%rename("ID"=id)
+kmer_last<-read.table("kmercountinlast500.txt", stringsAsFactors = F,header = T)
+kmer_last=kmer_last%>%rename("ID"=id)
+```
+
+
+```{R}
+setwd("~/Desktop/ReadcountTable/CPScounttable")
+library(raster)
+library(tidyverse)
+library(dplyr) 
+final<-read.csv("final_joined data.txt",sep="\t")
+au=read.csv("~/Desktop/ReadcountTable/TED_manipulated/3UTR_ATcontent.txt",sep="\t",stringsAsFactors = F,header=F)
+colnames(au)=c("ID","AUcontent")
+utr<-read.csv("~/Desktop/ReadcountTable/TED_manipulated/3UTRfinal.csv")
+utr=utr%>%select(ensembl_transcript_id,X3utrlength)%>%rename("ID"=ensembl_transcript_id)
+mat=final%>%mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%mutate("dTED_1and2"=TED_2-TED_1)%>%mutate("dTED_2and4"=TED_4-TED_2)%>%mutate("dTED_0and4"=TED_4-TED_0)%>%mutate("dTED_0and1"=TED_1-TED_0)%>%mutate("dTED_0and2"=TED_2-TED_0)%>%mutate("dTED_1and4"=TED_4-TED_1)
+q_TED=quantile(mat$dTED_1and2,c(0,0.25,0.5,0.75,1))
+mat=mat%>%mutate("tailChange"=ifelse(dTED_0and4<q_TED[2],"Shortened",ifelse(dTED_0and4>q_TED[4],"Lengthened","NS")))
+mat2=inner_join(mat,utr, by="ID")
+quantile(mat2$X3utrlength,c(0.25,0.75))
+
+mat2$utrlengthgroup="medium"
+mat2$utrlengthgroup[mat2$`X3utrlength`<295]="short"
+mat2$utrlengthgroup[mat2$`X3utrlength`>1390]="long"
+mat2$utrlengthgroup=factor(mat2$utrlengthgroup , levels=c("short","medium","long"))
+
+mat3=inner_join(mat2,au,by="ID")
+q_AU=quantile(mat3$AUcontent,c(0.25,0.5,0.75))
+mat3=mat3%>%mutate("AUgroup"=ifelse(AUcontent<q_AU[1],"0-25%",ifelse(AUcontent>q_AU[3],"75-100%",ifelse((AUcontent>q_AU[2]),"50-75%","25-50%"))))
+mat3$AUgroup=factor(mat3$AUgroup,levels=c("0-25%","25-50%","50-75%","75-100%"))
+mat3=mat3%>%mutate("tailChange"=ifelse(dTED_1and2<q_TED[2],"Shortened",ifelse(dTED_1and2>q_TED[4],"Lengthened","NS")))
+
+```
+
+Identify k-mer associated with dPAL
+```{R}
+
+m=mat3%>%select(ID,X3utrlength,grep("dTED",colnames(mat3)))%>%inner_join(kmer_last,by="ID")
+m=mat3%>%select(ID,X3utrlength,grep("dTED",colnames(mat3)))%>%inner_join(kmer_front,by="ID")
+dim(m)
+
+
+```
+
+Histogram
+```{R}
+pval=c()
+dPAL=c()
+head(m$dPAL)
+for (i in 9:ncol(m)){
+  q=quantile(m[,i],c(0.25,0.75))
+  
+  bottom=m$dTED_0and4[m[,i]<=q[1]]
+  
+  top=m$dTED_0and4[m[,i]>=q[2]]  
+  
+  pval=c(pval,t.test(bottom,top)$p.value)
+  dPAL=c(dPAL,mean(top)-mean(bottom))
+}
+
+bon.alpha=0.01/4096
+bon.alpha #2.441406e-07
+sum(pval<bon.alpha)/length(pval)
+colnames(kmer_last)[which(pval<bon.alpha)+1]
+#[1] "ATTTTG" "GCCCCC" "TATTTG" "TGTTTG" "TGCCCC" "TTATTG" "TTGCCC"
+# [8] "TTTGCC" "TTTTGG" "TTTTGC" "TTTTTG" "TTTTCG"
+aucontent=read.table("~/Desktop/ReadcountTable/Ref/all6merIDandAUcontent.txt",header=F,stringsAsFactors = F)
+aucontent=aucontent%>%rename("freq"=V2,"ID"=V1)
+
+p.df=as.tibble(data.frame(ID=colnames(kmer_last)[2:(ncol(kmer_last))],p=pval,dPAL=dPAL))%>%inner_join(aucontent,by="ID")%>%mutate("pvalue"=ifelse(p<bon.alpha,"Significant","NS"))#%>%group_by(freq,pvalue)%>%mutate(count=n())
+
+p.df[p.df$`pvalue`=="Significant",]
+
+library(gridExtra)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(9)[c(1,2,4,7,9)]
+```
+Hojoong's colorscheme
+```{R}
+# color function
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+col = c("royalblue4", "deepskyblue3", "turquoise3",
+  "grey62", "goldenrod2", "orange2", "orangered2") %>%
+col2rgb %>%
+rgb2hsv
+return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+   col[3,] * lum))(n)) }
+ 
+# define color values
+#yk.fill = yk.col(8,0.9,1)[2:7]
+#yk.cols = yk.col(8,1,0.7)[2:7]
+
+# plot histogram. 'data' should be your data frame of 6 mers with delta_PAL and AU_freq columns
+ggplot(data) +
+  geom_histogram(aes(x = delta_PAL, AU_freq), breaks = seq(-0.1, 0.1, by = 0.005)) +
+  stat_bin(aes(x = delta_PAL - 0.0025, col = AU_freq), breaks = seq(-0.1, 0.1, by = 0.005) - 0.0025, geom = "step", size = 0.4) +
+    theme_bw() +
+    scale_color_manual(values = yk.cols) +
+    scale_fill_manual(values = yk.fill) +
+ theme(legend.key = element_rect())
+
+pdf("Fig5E_front500nt_kmer.pdf",width=5.5,height=2.5)
+ggplot(data = p.df%>%filter(pvalue=="Significant")) + stat_bin(aes(x = dPAL - 0.0025, col = as.factor(freq)), breaks = seq(-0.13, 0.12, by = 0.005) - 0.0025, geom = "step", size = 0.6,position = position_dodge()) +
+    theme_bw()+ 
+    scale_color_manual(values = col) +
+    #scale_fill_manual(values = col) +
+ theme(legend.key = element_rect())+
+labs( title = expression("Front 500 nt: "*italic(Delta)*"PAL~ k-mer")) +labs(color = "AU frequency in k-mer")+
+  xlab(expression(italic(Delta)*"PAL"))+ scale_colour_manual(values = col) +geom_hline(yintercept =0,col="white",size=0.7)+
+  theme_bw()
+dev.off()
+
+
+
+
+```
+
+Histogram
+```{R}
+pdf("Fig5E_last500nt_kmer.pdf",width=5.5,height=2.5)
+ggplot(data = p.df%>%filter(pvalue=="Significant"),
+            aes(x = dPAL,
+                col = as.factor(freq)))+geom_histogram(position ="identity",bins=50,alpha=0) +#facet_wrap(diff~.,scales="free",ncol=3)+
+labs( title = expression("last 300 nt: "*italic(Delta)*"PAL~ k-mer")) +labs(color = "AU frequency in k-mer")+
+  xlab(expression(italic(Delta)*"PAL"))+ scale_colour_manual(values = col) +geom_hline(yintercept =0,col="grey")+
+  theme_bw() #+xlim(c(-0.07,0.075))
+dev.off()
+
+pdf("Fig5E_front500nt_kmer.pdf",width=5.5,height=2.5)
+ggplot(data = p.df%>%filter(pvalue=="Significant"),
+            aes(x = dPAL,
+                col = as.factor(freq)))+geom_histogram(position ="identity",geom = "step",bins=50,alpha=0) +#facet_wrap(diff~.,scales="free",ncol=3)+
+labs( title = expression("front 500 nt: "*italic(Delta)*"PAL~ k-mer")) +labs(color = "AU frequency in k-mer")+
+  xlab(expression(italic(Delta)*"PAL"))+ scale_colour_manual(values = col) +geom_hline(yintercept =0,col="grey")+
+  theme_bw() #+xlim(c(-0.07,0.075))
+dev.off()
+
+```

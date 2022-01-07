@@ -1,0 +1,219 @@
+---
+title: "F3S2_kmer"
+author: "Yeonui+Kwak"
+date: "6/10/2020"
+output: html_document
+---
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig3/Tmp2_kmer")
+```
+
+
+
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+library(gridExtra)
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(5)[c(1,5)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(0, 5000) +
+  ylab("Cumulative fraction")
+
+```
+
+Distal-LongPAL vs Proximal-LongPAL.
+```{r}
+len.d=read.table("DistalLongerPALregionLength.txt", stringsAsFactors = F,header = F)
+len.p=read.table("ProximalLongerPALregionLength.txt", stringsAsFactors = F,header = F)
+len.d=len.d%>%mutate(type="Distal-Long PAL:Only")
+len.p=len.p%>%mutate(type="Proximal-Long PAL:Only")
+len=list(len.d,len.p)%>%reduce(bind_rows)#%>%mutate(type=factor(type,levels=c("Proximal-Long PAL:Only","Distal-Long PAL:Only")))
+pdf("Distal-longPAL_Boxplot.pdf",width=3,height=3)
+ggplot(len,aes(x=type,y=V2,fill=type))+geom_boxplot()+ylim(c(0,4000))+scale_fill_manual(values=col)+theme_bw()+theme(axis.text.x=element_blank())+theme(legend.position = "none")+ylab(expression(italic(Delta)*" 3'UTR length(Distal-Proximal)"))
+dev.off()
+pdf("Distal-longPAL.pdf",width=4.5,height=2)
+cdf_common +
+  stat_ecdf(data = len,
+            aes(x = V2,
+                col = type),
+            geom = "step") +
+  labs( title =expression("Tandem 3'UTR"),color ="Tandem UTR \n w/ Longer PAL") +
+  xlab(expression(italic(Delta)*" 3'UTR length (Distal-Proximal)"))#+xlim(c(-0.6,0.6))
+dev.off()
+```
+```{R}
+kmer_distal<-read.table("kmercount_DistallongPAL.txt", stringsAsFactors = F,header = T)
+len=read.table("DistalLongerPALregionLength.txt", stringsAsFactors = F,header = F)
+len=len%>%rename(ID=V1)
+str(len)
+kmer_distal=kmer_distal%>%rename("ID"=id)
+tmp=kmer_distal%>%inner_join(len,by="ID")
+for (i in 1:nrow(tmp)){
+tmp[i,2:(ncol(tmp)-1)]=tmp[i,2:(ncol(tmp)-1)]/tmp[i,ncol(tmp)]
+}
+tmp_distal=tmp
+
+kmer_proximal<-read.table("kmercount_ProximallongPAL.txt", stringsAsFactors = F,header = T)
+len=read.table("ProximalLongerPALregionLength.txt", stringsAsFactors = F,header = F)
+len=len%>%rename(ID=V1)
+str(len)
+kmer_proximal=kmer_proximal%>%rename("ID"=id)
+tmp=kmer_proximal%>%inner_join(len,by="ID")
+for (i in 1:nrow(tmp)){
+tmp[i,2:(ncol(tmp)-1)]=tmp[i,2:(ncol(tmp)-1)]/tmp[i,ncol(tmp)]
+}
+tmp_proximal=tmp
+tmp
+tmp_distal=tmp_distal%>%select(-V2)%>%mutate(type="distal")
+tmp_proximal=tmp_proximal%>%select(-V2)%>%mutate(type="proximal")
+
+tmp=list(tmp_distal,tmp_proximal)%>%reduce(bind_rows)
+str(tmp)
+BiocManager::install("ComplexHeatmap")
+library(ComplexHeatmap)
+### Heatmap with Annotation
+library(dendextend)
+library("circlize")
+library("RColorBrewer")
+library(cluster)    # clustering algorithms
+library(factoextra)
+Heatmap(as.matrix(tmp[,2:(ncol(tmp)-1)]),split=tmp$type)
+colSums(tmp[,-1])*1000
+
+```
+
+
+```{R}
+library(raster)
+library(tidyverse)
+library(dplyr) 
+```
+
+
+Identify k-mer associated with dPAL
+```{R}
+tmp2=tmp%>%select(type,ATTAAA)%>%mutate(ATTAAA=ATTAAA*1000)
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  #xlim(0, ) +
+  ylab("Cumulative fraction")
+cdf_common +
+  stat_ecdf(data = tmp2,
+            aes(x = ATTAAA,
+                col = type),
+            geom = "step")
+```
+
+Histogram
+```{R}
+pval=c()
+nkmer=c()
+m=tmp
+proximal=m%>%filter(type=="proximal")
+distal=m%>%filter(type=="distal")
+for (i in 2:(ncol(m)-1)){
+  nkmer=c(nkmer,mean(distal[,i])-mean(proximal[,i]))
+  pval=c(pval,t.test(proximal[,i],distal[,i])$p.value)
+}
+pval
+bon.alpha=0.01/4096
+bon.alpha #2.441406e-07
+sum(pval<bon.alpha)/length(pval)
+colnames(tmp)[which(pval<0.01)+1]
+#[1] "ATTTTG" "GCCCCC" "TATTTG" "TGTTTG" "TGCCCC" "TTATTG" "TTGCCC"
+# [8] "TTTGCC" "TTTTGG" "TTTTGC" "TTTTTG" "TTTTCG"
+aucontent=read.table("all6merIDandAUcontent.txt",header=F,stringsAsFactors = F)
+aucontent=aucontent%>%rename("freq"=V2,"ID"=V1)
+
+p.df=as.tibble(data.frame(ID=colnames(tmp)[2:(ncol(tmp)-1)],p=pval,nkmer=nkmer*1000))%>%inner_join(aucontent,by="ID")%>%mutate("pvalue"=ifelse(p<0.01,"Significant","NS"))#%>%group_by(freq,pvalue)%>%mutate(count=n())
+
+p.df[p.df$`pvalue`=="Significant",]
+
+library(gridExtra)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(7)[c(1:7)]
+```
+Hojoong's colorscheme
+```{R}
+# color function
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+col = c("royalblue4", "deepskyblue3", "turquoise3",
+  "grey62", "goldenrod2", "orange2", "orangered2") %>%
+col2rgb %>%
+rgb2hsv
+return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+   col[3,] * lum))(n)) }
+ 
+# define color values
+#yk.fill = yk.col(8,0.9,1)[2:7]
+#yk.cols = yk.col(8,1,0.7)[2:7]
+
+# plot histogram. 'data' should be your data frame of 6 mers with delta_PAL and AU_freq columns
+ggplot(data) +
+  geom_histogram(aes(x = delta_PAL, AU_freq), breaks = seq(-0.1, 0.1, by = 0.005)) +
+  stat_bin(aes(x = delta_PAL - 0.0025, col = AU_freq), breaks = seq(-0.1, 0.1, by = 0.005) - 0.0025, geom = "step", size = 0.4) +
+    theme_bw() +
+    scale_color_manual(values = yk.cols) +
+    scale_fill_manual(values = yk.fill) +
+ theme(legend.key = element_rect())
+
+pdf("Fig5E_front500nt_kmer.pdf",width=5.5,height=2.5)
+ggplot(data = p.df%>%filter(pvalue=="Significant")) + stat_bin(aes(x = nkmer, col = as.factor(freq)), geom = "step", size = 0.6,position = position_dodge()) +
+    theme_bw()+ 
+    scale_color_manual(values = col) +
+    #scale_fill_manual(values = col) +
+ theme(legend.key = element_rect())+
+labs( title = expression("Front 500 nt: "*italic(Delta)*"PAL~ k-mer")) +labs(color = "AU frequency in k-mer")+
+  xlab(expression(italic(Delta)*"PAL"))+ scale_colour_manual(values = col) +geom_hline(yintercept =0,col="white",size=0.7)+
+  theme_bw()
+dev.off()
+
+
+
+
+```
+
+Histogram
+```{R}
+pdf("kmer enrichment in distal -long PAL.pdf",width=5.5,height=2.5)
+ggplot(data = p.df%>%filter(pvalue=="Significant"),
+            aes(x = nkmer,
+                fill = as.factor(freq)))+geom_histogram(position ="identity",bins=50,alpha=1) +#facet_wrap(diff~.,scales="free",ncol=3)+
+ labs(fill = "AU frequency in k-mer")+
+  xlab(expression("kmer enrichment index"))+ scale_fill_manual(values = col) +geom_hline(yintercept =0,col="grey")+
+  theme_bw() +xlim(c(-0.6,0.6))+ylab("kmer count")
+dev.off()
+
+ggplot(data = p.df%>%filter(pvalue=="Significant")%>%mutate(type=ifelse(nkmer>0,"Distal-longPAL","Distsal-shortPAL")),
+            aes(x = type,
+                fill = as.factor(freq)))+geom_bar()+ scale_fill_manual(values = col)
+
+```

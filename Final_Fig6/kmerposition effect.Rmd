@@ -1,0 +1,165 @@
+---
+title: "kmer position effect.Fig5E-F"
+author: "Yeonui+Kwak"
+date: "11/20/2019"
+output: html_document
+---
+```{R}
+kmer_front<-read.table("~/Desktop/Python\ scripts/kmercountinfront300.txt", stringsAsFactors = F,header = T)
+kmer_front=kmer_front%>%rename("ID"=id)
+kmer_last<-read.table("~/Desktop/Python\ scripts/kmercountinlast300.txt", stringsAsFactors = F,header = T)
+kmer_last=kmer_last%>%rename("ID"=id)
+```
+
+
+```{R}
+setwd("~/Desktop/ReadcountTable/CPScounttable")
+library(raster)
+library(tidyverse)
+library(dplyr) 
+final<-read.csv("final_joined data.txt",sep="\t")
+au=read.csv("~/Desktop/ReadcountTable/TED_manipulated/3UTR_ATcontent.txt",sep="\t",stringsAsFactors = F,header=F)
+colnames(au)=c("ID","AUcontent")
+utr<-read.csv("~/Desktop/ReadcountTable/TED_manipulated/3UTRfinal.csv")
+utr=utr%>%select(ensembl_transcript_id,X3utrlength)%>%rename("ID"=ensembl_transcript_id)
+mat=final%>%mutate("dCPS_1and2"=CPS_2-CPS_1)%>%mutate("dCPS_2and4"=CPS_4-CPS_2)%>%mutate("dTED_1and2"=TED_2-TED_1)%>%mutate("dTED_2and4"=TED_4-TED_2)%>%mutate("dTED_0and4"=TED_4-TED_0)%>%mutate("dTED_0and1"=TED_1-TED_0)%>%mutate("dTED_0and2"=TED_2-TED_0)%>%mutate("dTED_1and4"=TED_4-TED_1)
+q_TED=quantile(mat$dTED_1and2,c(0,0.25,0.5,0.75,1))
+mat=mat%>%mutate("tailChange"=ifelse(dTED_0and4<q_TED[2],"Shortened",ifelse(dTED_0and4>q_TED[4],"Lengthened","NS")))
+mat2=inner_join(mat,utr, by="ID")
+quantile(mat2$X3utrlength,c(0.25,0.75))
+
+mat2$utrlengthgroup="medium"
+mat2$utrlengthgroup[mat2$`X3utrlength`<295]="short"
+mat2$utrlengthgroup[mat2$`X3utrlength`>1390]="long"
+mat2$utrlengthgroup=factor(mat2$utrlengthgroup , levels=c("short","medium","long"))
+
+mat3=inner_join(mat2,au,by="ID")
+q_AU=quantile(mat3$AUcontent,c(0.25,0.5,0.75))
+mat3=mat3%>%mutate("AUgroup"=ifelse(AUcontent<q_AU[1],"0-25%",ifelse(AUcontent>q_AU[3],"75-100%",ifelse((AUcontent>q_AU[2]),"50-75%","25-50%"))))
+mat3$AUgroup=factor(mat3$AUgroup,levels=c("0-25%","25-50%","50-75%","75-100%"))
+mat3=mat3%>%mutate("tailChange"=ifelse(dTED_1and2<q_TED[2],"Shortened",ifelse(dTED_1and2>q_TED[4],"Lengthened","NS")))
+
+```
+
+Identify k-mer associated with dPAL
+```{R}
+
+m=mat3%>%select(ID,X3utrlength,grep("dTED",colnames(mat3)))%>%inner_join(kmer_last,by="ID")
+m=mat3%>%select(ID,X3utrlength,grep("dTED",colnames(mat3)))%>%inner_join(kmer_front,by="ID")
+dim(m)
+
+
+```
+
+CDFplot
+```{R}
+pval=c()
+dPAL=c()
+head(m$dPAL)
+for (i in 9:ncol(m)){
+  q=quantile(m[,i],c(0.25,0.75))
+  
+  bottom=m$dTED_0and4[m[,i]<=q[1]]
+  
+  top=m$dTED_0and4[m[,i]>=q[2]]  
+  
+  pval=c(pval,t.test(bottom,top)$p.value)
+  dPAL=c(dPAL,mean(top)-mean(bottom))
+}
+
+bon.alpha=0.01/4096
+bon.alpha #2.441406e-07
+sum(pval<bon.alpha)/length(pval)
+colnames(kmer_last)[which(pval<bon.alpha)+1]
+#[1] "ATTTTG" "GCCCCC" "TATTTG" "TGTTTG" "TGCCCC" "TTATTG" "TTGCCC"
+# [8] "TTTGCC" "TTTTGG" "TTTTGC" "TTTTTG" "TTTTCG"
+aucontent=read.table("~/Desktop/ReadcountTable/Ref/all6merIDandAUcontent.txt",header=F,stringsAsFactors = F)
+aucontent=aucontent%>%rename("freq"=V2,"ID"=V1)
+
+p.df=as.tibble(data.frame(ID=colnames(kmer_last)[2:(ncol(kmer_last))],p=pval,dPAL=dPAL))%>%inner_join(aucontent,by="ID")%>%mutate("pvalue"=ifelse(p<bon.alpha,"Significant","NS"))
+
+p.df[p.df$`pvalue`=="Significant",]
+
+library(gridExtra)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+  col = c("royalblue4", "deepskyblue3", "turquoise3",
+          "grey62", "goldenrod2", "orange2", "orangered2") %>%
+    col2rgb %>%
+    rgb2hsv
+  return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+                              col[3,] * lum))(n)) }
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(7)[c(2,3,6,7)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(-0.2, 0.2) +
+  ylab("Cumulative fraction")
+
+pdf("cdf_AUfreq_kmer_dPAL_last.pdf",width=4.5,height=2.5)
+cdf_common +
+  stat_ecdf(data = p.df%>%filter(pvalue=="Significant"),
+            aes(x = dPAL,
+                col = as.factor(freq)),
+            geom = "step") +#facet_wrap(diff~.,scales="free",ncol=3)+
+labs( title = expression("last 300 nt: "*italic(Delta)*"PAL~ k-mer")) +labs(color = "AU frequency in k-mer")+
+  xlab(expression(Shorten %<-%"  influence on PAL  "%->% Lengthen))
+dev.off()
+
+pdf("cdf_AUfreq_kmer_dPAL_all.pdf",width=4,height=2.5)
+cdf_common +
+  stat_ecdf(data = p.df,
+            aes(x = dPAL,
+                col = as.factor(freq)),
+            geom = "step") +#facet_wrap(diff~.,scales="free",ncol=3)+
+labs( title = expression("AU freq in k-mer associated with "*italic(Delta)*"PAL")) +labs(color = "AU freq in k-mer")+
+  xlab(expression(italic(Delta)*"log2(PAL(4 hr/0 hr))"))
+dev.off()
+
+
+install.packages("dplot")
+library(dplot)
+
+```
+
+```{R}
+t=p.df %>% group_by(freq,pvalue)%>%count(freq)%>% group_by(freq) %>% mutate(perc=n/sum(n)*100)%>%ungroup()
+t
+```
+
+```{R}
+t
+col = yk.col(7) 
+#front
+t=t%>%filter(pvalue=="Significant")%>%bind_rows(data.frame(freq=c(3,4,5,6),pvalue="Significant",n=0,perc=0))%>%mutate(freq=factor(freq,levels=c(0,1,2,3,4,5,6)))
+#last
+t=t%>%filter(pvalue=="Significant")%>%bind_rows(data.frame(freq=c(0,3,4),pvalue="Significant",n=0,perc=0))%>%mutate(freq=factor(freq,levels=c(0,1,2,3,4,5,6)))
+
+pdf("front 300nt 3UTR 6mer.pdf", width = 3.5,height = 3)
+ggplot(t,aes(x=freq, y=perc))+geom_col(alpha=1,aes(fill=freq))+scale_fill_manual(values = col) +ylab("Number of detected k-mers(%)")+ylim(c(0,32))+labs(title="front 300 nt")+
+  theme_bw()+xlab("AU frequency in k-mer")+labs(color = "AU frequency in k-mer")
+dev.off()
+```
+dev.off()
+```{R}
+#Y axis limit 30%
+pdf("back 300nt 3UTR 6mer30.pdf", width = 6,height = 4)
++ggplot(t,aes(x=atcontent, y=perc,fill=`p-value`))+geom_col(alpha=1)+theme(panel.background = element_rect(fill = "white",
+                                                                                                          colour = "white",
+                                                                                                          size = 0.5, linetype = "solid"),text = element_text(size=20))+theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                                                                                                                                                                              panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+theme(text = element_text(size=20))+ylab("Percentage (%)")+xlab("AU quantity in 6 mers")+scale_fill_manual(values=c("red"))+ylim(c(0,30))
+dev.off()
+
+
+pdf("front 300nt 3UTR 6mer30.pdf", width = 6,height = 4)
+#t$atcontent=factor(t$atcontent)
+ggplot(t,aes(x=atcontent, y=perc,fill=`p-value`))+geom_col(alpha=1)+theme(panel.background = element_rect(fill = "white",
+                                                                                                          colour = "white",
+                                                                                                          size = 0.5, linetype = "solid"),text = element_text(size=20))+theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                                                                                                                                                                              panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+theme(text = element_text(size=20))+ylab("Percentage (%)")+xlab("AU quantity in 6 mers")+scale_fill_manual(values=c("red"))+xlim(c(0,6))+ylim(c(0,30))
+dev.off()
+
+
+
+```

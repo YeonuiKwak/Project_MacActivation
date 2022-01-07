@@ -1,0 +1,81 @@
+---
+title: "F3S5_AU content in distal 3UTR"
+author: "Yeonui+Kwak"
+date: "6/4/2020"
+output: html_document
+---
+
+1.Set a working directory
+```{R}
+setwd("~/Desktop/Publication_Mar/Fig3/Tmp5")
+
+```
+#set up color
+```{r}
+library(RColorBrewer)
+#nstall.packages("raster")
+library(raster)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggbeeswarm)
+yk.col = function(n = 5, sat = 0.7, lum = 1) {
+	col = c("royalblue4", "deepskyblue3", "turquoise3",
+	   "grey62", "goldenrod2", "orange2", "orangered2") %>%
+	col2rgb %>%
+	rgb2hsv
+	return(colorRampPalette(hsv(col[1,], col[2,] * sat,
+				    col[3,] * lum))(n)) }
+library(gridExtra)
+
+par(mar = c(2,2,1,1), mgp = c(1.5,0.5,0))
+col = yk.col(5)[c(1,2,4,5)] 
+cdf_common = ggplot() +
+  scale_color_manual(values = col) +
+  theme_bw() +
+  xlim(0.3, 0.9) +
+  ylab("Cumulative fraction")
+
+```
+
+
+Load files
+```{R}
+Distal.long.Only=read.table("DistalLongerPAL_DistalOnly.AUcontent.txt", header = F,stringsAsFactors = F)
+Distal.long.common=read.table("DistalLongerPAL_sharedregion.AUcontent.txt", header = F,stringsAsFactors = F)
+Proximal.long.Only=read.table("ProximalLongerPAL_DistalOnly.AUcontent.txt", header = F,stringsAsFactors = F)
+Proximal.long.common=read.table("ProximalLongerPAL_sharedregion.AUcontent.txt", header = F,stringsAsFactors = F)
+nrow(Proximal.long.Only)
+```
+
+
+```{R}
+distal=Distal.long.Only%>%mutate(type="Distal-Long PAL:Only")%>%bind_rows(Distal.long.common%>%mutate(type="Distal-Long PAL:common"))
+proximal=Proximal.long.Only%>%mutate(type="Proximal-Long PAL:Only")%>%bind_rows(Proximal.long.common%>%mutate(type="Proximal-Long PAL:common"))
+total=distal%>%bind_rows(proximal)
+pdf("AUcontentintandem3UTRs1.pdf",width=4.5,height=4)
+ggplot(total,aes(x=type,y=V2,fill=type))+geom_boxplot()+scale_fill_manual(values=col)+theme_bw()+
+  theme(axis.text.x = element_text(angle = 75, hjust = 1, vjust = 1))+ylab("A+U content(%)")+xlab("")
+dev.off()
+pdf("AUcontentintandem3UTRs2.pdf",width=6,height=3)
+cdf_common +
+  stat_ecdf(data = total,
+            aes(x = V2,
+                col = type),
+            geom = "step") +
+  labs( title =expression("AU content" ),color ="3´UTR regions") +
+  xlab(expression(italic(Delta)*"AUcontent"))#+xlim(c(-0.6,0.6))
+dev.off()
+#wilcox.test(V2 ~ type, data=distal) 
+ks.test(total$V2[total$type=="Proximal-Long PAL:common"],total$V2[total$type=="Proximal-Long PAL:Only"]) 
+ks.test(total$V2[total$type=="Distal-Long PAL:common"],total$V2[total$type=="Distal-Long PAL:Only"]) 
+ks.test(total$V2[total$type=="Distal-Long PAL:Only"],total$V2[total$type=="Proximal-Long PAL:Only"]) 
+```
+
+```{R}
+
+
+
+
+```
